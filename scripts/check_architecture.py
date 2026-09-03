@@ -50,7 +50,7 @@ FORBIDDEN = {
 }
 
 EXACT_DEPENDENCIES = {
-    "crates/aiai-runtime/Cargo.toml": {"aiai-contracts"},
+    "crates/aiai-runtime/Cargo.toml": {"aiai-contracts", "serde"},
 }
 
 WEBLLM_PACKAGE = ROOT / "packages/aiai-webllm/package.json"

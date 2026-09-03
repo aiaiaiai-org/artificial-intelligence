@@ -138,6 +138,30 @@ stays pending so the same decision can be sought again.
 repeated delegation, and no sequence of narrowing calls recovers a capability that an
 earlier step dropped.
 
+### A subject outlives the process serving it
+
+`SubjectBinding` makes computation replaceable within one run. `SessionSnapshot` makes it
+replaceable across runs: `snapshot` captures the durable half of a session — identity,
+binding, scope, activation, counters, and the proposals still awaiting a decision — and
+`restore` seats a session on it. A restored session may be served by a different clock,
+identifier source, computation, or authority, because ports are supplied per call and are
+not part of what a session is.
+
+Two things are deliberately absent. An `Admitted` value in flight is not session state: it
+is permission a caller was granted and then held, and a restart is evidence neither that the
+attempt happened nor that it did not, so the product seeks the decision again rather than
+resuming a permission whose outcome nobody observed. The ports themselves are absent for the
+same reason they are parameters everywhere else.
+
+`restore` refuses a snapshot from a compatibility line this build does not implement, one
+carrying the same proposal identifier twice, and one whose sequence counter sits below a
+proposal it already emitted — each would seat a session that contradicts itself. It cannot
+verify that the bytes are the ones this session wrote. Storage is the product's trust
+boundary, and the honest statement is that a product able to rewrite its own snapshots can
+seat pending proposals of its choosing, exactly as it could by calling `propose` with
+computation of its choosing. Neither route reaches the authority boundary: a restored
+proposal becomes an action only through an `Authority` decision inside the restored scope.
+
 ## Failure is an outcome, not a gap
 
 Every port returns `Result`. An unavailable clock is not a substituted timestamp; an

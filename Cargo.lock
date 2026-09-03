@@ -16,6 +16,8 @@ name = "aiai-runtime"
 version = "0.1.0"
 dependencies = [
  "aiai-contracts",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

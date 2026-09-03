@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use core::fmt;
+use serde::{Deserialize, Serialize};
 
 /// Whether the runtime for a subject is currently permitted to compute.
 ///
 /// Existence is durable; computation is not. A subject continues to exist while its
 /// runtime is [`Dormant`](ActivationState::Dormant) — it simply produces nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ActivationState {
     /// No computation. The runtime initiates nothing and finishes nothing.
     Dormant,

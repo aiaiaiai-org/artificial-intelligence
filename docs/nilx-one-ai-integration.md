@@ -138,8 +138,11 @@ boundary is unambiguous:
    authority questions.
 3. **The `Inference` port.** Provider selection, local versus remote computation, shared
    infrastructure, model fallback. All replaceable; none of it identity.
-4. **Persistence and scheduling.** Which subjects exist, when they wake, what durable state
-   they carry between activations.
+4. **Persistence and scheduling.** Which subjects exist, when they wake, and where their
+   state lives. The foundation supplies the shape — `RuntimeSession::snapshot` and
+   `restore`, with `SessionSnapshot` as the stored value — and refuses to seat a snapshot
+   that contradicts itself. Where those bytes are kept, how they are authenticated, and
+   what schedules a wake are `ai`'s decisions, and storage is `ai`'s trust boundary.
 5. **Effect adapters.** Turning an effect request into an actual attempt against `core` and
    the network, and reporting the real outcome rather than an assumed one.
 6. **Signal archetypes, if and when they are activated.** Concrete archetypes registered in

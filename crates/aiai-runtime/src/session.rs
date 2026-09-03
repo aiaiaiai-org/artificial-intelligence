@@ -4,11 +4,12 @@
 use crate::{
     ActivationState, ActivationTransition, Admitted, Authority, AuthorityDecision, Candidate,
     Clock, ContinuityRelation, DelegationScope, IdentifierGeneration, Inference, PortError,
-    PortKind, SubjectBinding,
+    PortKind, SessionSnapshot, SubjectBinding,
 };
 use aiai_contracts::{
-    AdmissionEnvelope, ContextPort, ContractVersion, DecimalU64, EffectRequestEnvelope,
-    FoundationError, OperationId, ProposalEnvelope, ProposalId, SessionId, WakeEnvelope,
+    AdmissionEnvelope, CONTRACT_VERSION, ContextPort, ContractVersion, DecimalU64,
+    EffectRequestEnvelope, FoundationError, OperationId, ProposalEnvelope, ProposalId, SessionId,
+    WakeEnvelope,
 };
 use std::collections::BTreeMap;
 
@@ -111,6 +112,116 @@ impl<P> RuntimeSession<P> {
     #[must_use]
     pub const fn revision(&self) -> DecimalU64 {
         self.revision
+    }
+
+    /// Returns the last emission sequence this session issued.
+    #[must_use]
+    pub const fn sequence(&self) -> DecimalU64 {
+        self.sequence
+    }
+
+    /// Captures the durable half of this session.
+    ///
+    /// See [`SessionSnapshot`] for what a snapshot carries, what it deliberately does not,
+    /// and where the trust boundary sits.
+    #[must_use]
+    pub fn snapshot(&self) -> SessionSnapshot<P>
+    where
+        P: Clone,
+    {
+        SessionSnapshot {
+            contract_version: ContractVersion::CURRENT,
+            session_id: self.session_id.clone(),
+            subject_id: self.binding.subject_id().clone(),
+            controller_id: self.binding.controller_id().clone(),
+            runtime_id: self.binding.runtime_id().clone(),
+            model_id: self.binding.model_id().cloned(),
+            delegated_capabilities: self.scope.capabilities().cloned().collect(),
+            activation: self.activation,
+            sequence: self.sequence,
+            revision: self.revision,
+            pending: self.pending.values().cloned().collect(),
+        }
+    }
+
+    /// Consumes the session and captures its durable half.
+    ///
+    /// The same as [`RuntimeSession::snapshot`] for a proposal payload that cannot be
+    /// cloned.
+    #[must_use]
+    pub fn into_snapshot(self) -> SessionSnapshot<P> {
+        SessionSnapshot {
+            contract_version: ContractVersion::CURRENT,
+            session_id: self.session_id,
+            subject_id: self.binding.subject_id().clone(),
+            controller_id: self.binding.controller_id().clone(),
+            runtime_id: self.binding.runtime_id().clone(),
+            model_id: self.binding.model_id().cloned(),
+            delegated_capabilities: self.scope.capabilities().cloned().collect(),
+            activation: self.activation,
+            sequence: self.sequence,
+            revision: self.revision,
+            pending: self.pending.into_values().collect(),
+        }
+    }
+
+    /// Seats a session on a snapshot a product stored earlier.
+    ///
+    /// The subject continues; the process that served it did not have to. Ports are not
+    /// part of a snapshot, so a restored session may be served by a different clock,
+    /// identifier source, computation, or authority than the one that produced it — that is
+    /// the point of computation being replaceable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FoundationError::unsupported_contract_version`] for a snapshot from a
+    /// compatibility line this build does not implement,
+    /// [`FoundationError::duplicate_proposal_id`] when the same proposal identifier appears
+    /// twice, and [`FoundationError::malformed_envelope`] when a pending proposal carries a
+    /// sequence the snapshot's counter has not reached — a session that would re-issue a
+    /// sequence it already emitted.
+    ///
+    /// It does not verify that the snapshot is one this session wrote; see
+    /// [`SessionSnapshot`] for where that boundary lies.
+    pub fn restore(snapshot: SessionSnapshot<P>) -> Result<Self, FoundationError> {
+        if !snapshot
+            .contract_version
+            .accepts_provider(ContractVersion::CURRENT)
+        {
+            return Err(FoundationError::unsupported_contract_version(
+                None,
+                Some(snapshot.contract_version.to_string()),
+                CONTRACT_VERSION.to_owned(),
+            ));
+        }
+
+        let mut pending = BTreeMap::new();
+        for envelope in snapshot.pending {
+            if envelope.sequence > snapshot.sequence {
+                return Err(FoundationError::malformed_envelope(Some(
+                    envelope.operation_id,
+                )));
+            }
+            let proposal_id = envelope.proposal_id.clone();
+            if pending.insert(proposal_id.clone(), envelope).is_some() {
+                return Err(FoundationError::duplicate_proposal_id(None, proposal_id));
+            }
+        }
+
+        Ok(Self {
+            session_id: snapshot.session_id,
+            binding: SubjectBinding::new(
+                snapshot.subject_id,
+                snapshot.controller_id,
+                snapshot.runtime_id,
+                snapshot.model_id,
+            ),
+            scope: DelegationScope::new(snapshot.delegated_capabilities),
+            activation: snapshot.activation,
+            sequence: snapshot.sequence,
+            revision: snapshot.revision,
+            pending,
+        })
     }
 
     /// Returns the number of proposals awaiting an authority decision.

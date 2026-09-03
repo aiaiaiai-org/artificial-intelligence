@@ -143,6 +143,38 @@ it did not run.
 - `ensure_activation` refuses `Quiescing -> Active`. Settling asserts that in-flight work
   reached its boundary; the product makes that assertion explicitly or not at all.
 
+## Sessions between activations
+
+A session is a live value, not a database row. The product decides where one lives between
+activations; the foundation supplies the shape it stores.
+
+```rust
+// Going quiet: keep the durable half.
+let snapshot = session.snapshot();               // or into_snapshot() for a payload
+store.put(session_id, serde_json::to_vec(&snapshot)?)?;  // that cannot be cloned
+
+// Coming back, possibly in another process, on another host, behind other ports.
+let snapshot: SessionSnapshot<ProductProposal> = serde_json::from_slice(&bytes)?;
+let mut session = RuntimeSession::restore(snapshot)?;
+```
+
+`SessionSnapshot` is `Serialize` and `Deserialize`, so any serde format works; the payload
+type `P` must be too. Restoring refuses a snapshot from an incompatible contract line, one
+repeating a proposal identifier, and one whose counter sits below a proposal it already
+emitted.
+
+Three things do not travel:
+
+- **An `Admitted` value in flight.** It is permission the caller was holding, not session
+  state. A restart is evidence neither that the attempt happened nor that it did not, so
+  seek the decision again — never treat a lost admission as a completed action.
+- **The ports.** A clock, identifier source, computation, and authority are supplied per
+  call. A restored session may be served by entirely different ones.
+- **Any guarantee about the bytes.** Storage is your trust boundary. Restoring does not
+  verify that a snapshot is one this session wrote, and a product able to rewrite its own
+  snapshots can seat pending proposals of its choosing — exactly as it could by calling
+  `propose` with computation of its choosing. Neither reaches the authority boundary.
+
 ## What the product owns, and must not delegate here
 
 - **Completion.** The foundation has no completion concept. `dispatch` is an attempt.
