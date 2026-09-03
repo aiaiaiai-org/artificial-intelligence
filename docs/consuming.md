@@ -8,7 +8,11 @@ contract from the consumer's side.
 
 ```toml
 [dependencies]
-aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.1.0" }
+# No release is tagged yet, so pin a revision reachable from master.
+aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
+
+# From the first tagged release onward:
+# aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.1.0" }
 ```
 
 `aiai-runtime` re-exports the contract crate, so a product does not add a second dependency
@@ -25,10 +29,13 @@ and is never required in order to run a session.
 
 ### Pinning
 
-Pin a tag. While the foundation is pre-`1.0`, a `rev` is acceptable, but pin one reachable
+Pin a tag once one exists. No release is tagged yet, so pin a `rev` — and pin one reachable
 from `master`: a revision that only ever existed on a feature branch is orphaned when that
 branch is squash-merged or deleted, and every consumer pinned to it stops resolving. For the
 same reason foundation pull requests that consumers already pin are merged, not squashed.
+
+Pinning a branch instead of a tag or revision is not a substitute. A branch moves, so the
+build that passed yesterday is not the build that runs today.
 
 `Cargo.lock` is committed. CI runs `--locked`, so the checked-in resolution is the one that
 is verified; a consumer resolving this workspace as a git dependency still does its own

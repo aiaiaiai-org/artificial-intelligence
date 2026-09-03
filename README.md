@@ -38,7 +38,8 @@ to the same revision:
 
 ```toml
 [dependencies]
-aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.1.0" }
+# Until the first tagged release, pin a revision reachable from master.
+aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
 ```
 
 See [Consuming the foundation](docs/consuming.md) for the port, failure, and pinning
