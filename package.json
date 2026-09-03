@@ -1,0 +1,15 @@
+{
+  "name": "aiaiaiai-artificial-intelligence",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:web": "npm run build --workspaces --if-present",
+    "test:web": "npm test --workspaces --if-present",
+    "typecheck:web": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
