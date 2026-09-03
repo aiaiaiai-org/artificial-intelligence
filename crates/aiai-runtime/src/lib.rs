@@ -74,6 +74,6 @@ pub mod prelude {
     pub use aiai_contracts::{
         AdmissionEnvelope, CapabilityName, ContextPort, ContractVersion, ControllerId, DecimalU64,
         EffectRequestEnvelope, ErrorCode, FoundationError, ModelId, OperationId, ProposalEnvelope,
-        ProposalId, RuntimeId, SessionId, SubjectId, WakeEnvelope,
+        ProposalId, RuntimeId, SessionId, SubjectId, TurnOk, TurnOutcome, WakeEnvelope,
     };
 }

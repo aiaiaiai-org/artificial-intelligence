@@ -45,6 +45,18 @@ resolution and is unaffected by it.
 is the normative wire version, and `require_compatible_contract` checks a peer's claim
 before a payload is decoded.
 
+### Browser and other targets
+
+`aiai-contracts`, `aiai-runtime`, and `aiai-signal` build for `wasm32-unknown-unknown`, and
+CI keeps them building for it. A product that compiles the kernel into its own browser
+artifact does not need a binding layer from this repository — it wraps the crates the way it
+wraps any other Rust it ships.
+
+That target is a constraint on this repository, not a feature of it: the crates read no
+wall clock, no ambient randomness, and no ambient configuration, and `getrandom`, `tokio`,
+and `reqwest` are refused by the architecture check. Anything that would break the target
+would have broken the port model first.
+
 ### Licensing
 
 The foundation is Apache-2.0. A product under a different license — `nilx-one/ai` is
@@ -142,6 +154,30 @@ it did not run.
   not consulted about it.
 - `ensure_activation` refuses `Quiescing -> Active`. Settling asserts that in-flight work
   reached its boundary; the product makes that assertion explicitly or not at all.
+
+## Reporting a turn
+
+A turn usually has to leave the process that ran it — to a browser, a host adapter, a
+caller across a transport. `TurnOk` and `TurnOutcome` are that closed shape, and the session
+assembles the report from its own state rather than leaving a product to reconstruct it:
+
+```rust
+let turn = session.turn_ok(operation_id, &still_pending, effect_requests)?;
+let outcome: TurnOutcome<ProductProposal, ProductEffect> = Ok(turn).into();
+```
+
+`contract_version` and `session_revision` come from the session. That is the point of the
+helper: a revision a caller tracks separately drifts, and a report carrying a drifted
+revision describes a session state that never existed. The named proposals are looked up in
+session-owned state, so `turn_ok` refuses to report a proposal already decided or one this
+session never produced.
+
+The conversion from `Result` is total, so a failed turn is reported as an `error` member
+rather than dropped:
+
+```rust
+let outcome: TurnOutcome<_, _> = run_turn(&mut session).into();
+```
 
 ## Sessions between activations
 

@@ -9,7 +9,7 @@ use crate::{
 use aiai_contracts::{
     AdmissionEnvelope, CONTRACT_VERSION, ContextPort, ContractVersion, DecimalU64,
     EffectRequestEnvelope, FoundationError, OperationId, ProposalEnvelope, ProposalId, SessionId,
-    WakeEnvelope,
+    TurnOk, WakeEnvelope,
 };
 use std::collections::BTreeMap;
 
@@ -606,6 +606,52 @@ impl<P> RuntimeSession<P> {
         };
         self.revision = revision;
         Ok(envelope)
+    }
+
+    /// Assembles the closed report of one turn from this session's own state.
+    ///
+    /// `proposal_ids` names the proposals this turn is handing back for a decision; each is
+    /// looked up in session-owned state rather than supplied as content, so a reported
+    /// proposal is the one the session actually produced. The contract version and session
+    /// revision come from the session, which is the point: a caller assembling
+    /// [`TurnOk`] by hand has to guess the revision, and a guess that drifts is a report
+    /// that describes a session state that never existed.
+    ///
+    /// Wrap the result with [`TurnOutcome`](aiai_contracts::TurnOutcome) — the conversion
+    /// from `Result` is total, so a failed turn is reported rather than lost.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FoundationError::unknown_proposal`] when `proposal_ids` names anything
+    /// this session does not currently hold pending — a proposal already decided, or one it
+    /// never produced. Reporting either would describe a turn that did not happen.
+    pub fn turn_ok<F>(
+        &self,
+        operation_id: OperationId,
+        proposal_ids: &[ProposalId],
+        effect_requests: Vec<EffectRequestEnvelope<F>>,
+    ) -> Result<TurnOk<P, F>, FoundationError>
+    where
+        P: Clone,
+    {
+        let mut proposals = Vec::with_capacity(proposal_ids.len());
+        for proposal_id in proposal_ids {
+            let Some(envelope) = self.pending.get(proposal_id) else {
+                return Err(FoundationError::unknown_proposal(
+                    Some(operation_id),
+                    proposal_id.clone(),
+                ));
+            };
+            proposals.push(envelope.clone());
+        }
+
+        Ok(TurnOk {
+            contract_version: ContractVersion::CURRENT,
+            operation_id,
+            session_revision: self.revision,
+            proposals,
+            effect_requests,
+        })
     }
 
     fn port_failure(operation_id: Option<OperationId>, error: PortError) -> FoundationError {

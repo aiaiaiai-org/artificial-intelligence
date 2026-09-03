@@ -12,11 +12,11 @@
 use aiai_runtime::prelude::*;
 
 /// A world target the product resolved. The foundation never mints or reads one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct TargetId(String);
 
 /// The product's closed proposal payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum ProductProposal {
     Reply { text: String },
     MoveTo { target: TargetId },
@@ -288,4 +288,124 @@ fn handing_control_back_stops_new_work_without_discarding_started_work() {
         .ensure_activation(None, ControlMode::Attending.activation_state())
         .expect("and then attends again");
     assert_eq!(session.activation(), ActivationState::Active);
+}
+
+/// The product's closed effect payload, for the turn a host receives.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum ProductEffect {
+    SendReply { text: String },
+}
+
+#[test]
+fn a_turn_is_reported_from_session_state_rather_than_assembled_by_hand() {
+    let mut session = product_session();
+    session
+        .ensure_activation(None, ControlMode::Attending.activation_state())
+        .expect("attending");
+    let proposal_ids = session
+        .propose(
+            "op_00000000000000000000000000000001"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            &"the counterpart".to_owned(),
+            &mut ProductInference,
+            &mut SequentialIdentifiers::default(),
+        )
+        .expect("proposed");
+
+    let admitted = session
+        .admit(
+            "op_00000000000000000000000000000002"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            &proposal_ids[0],
+            &OwnerAuthority,
+        )
+        .expect("admitted");
+    let dispatched = session
+        .dispatch(
+            "op_00000000000000000000000000000003"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            admitted,
+        )
+        .expect("dispatched");
+    let effect_request = EffectRequestEnvelope {
+        contract_version: dispatched.contract_version,
+        operation_id: dispatched.operation_id,
+        sequence: dispatched.sequence,
+        effect: match dispatched.effect {
+            ProductProposal::Reply { text } => ProductEffect::SendReply { text },
+            ProductProposal::MoveTo { .. } => unreachable!("the reply was admitted"),
+        },
+    };
+
+    let turn_operation = "op_00000000000000000000000000000004"
+        .parse::<OperationId>()
+        .expect("canonical operation id");
+    let turn = session
+        .turn_ok(
+            turn_operation.clone(),
+            &proposal_ids[1..],
+            vec![effect_request],
+        )
+        .expect("the session reports its own turn");
+
+    // The revision comes from the session, not from the caller's bookkeeping.
+    assert_eq!(turn.session_revision, session.revision());
+    assert_eq!(turn.contract_version, ContractVersion::CURRENT);
+    assert_eq!(turn.operation_id, turn_operation);
+    assert_eq!(
+        turn.proposals.len(),
+        1,
+        "one proposal still awaits a decision"
+    );
+    assert_eq!(turn.proposals[0].proposal_id, proposal_ids[1]);
+    assert_eq!(turn.effect_requests.len(), 1);
+
+    let outcome: TurnOutcome<ProductProposal, ProductEffect> = Ok(turn).into();
+    let encoded = serde_json::to_string(&outcome).expect("a turn crosses a process boundary");
+    assert!(encoded.contains("\"session_revision\""));
+}
+
+#[test]
+fn reporting_a_proposal_the_session_no_longer_holds_is_refused() {
+    let mut session = product_session();
+    session
+        .ensure_activation(None, ControlMode::Attending.activation_state())
+        .expect("attending");
+    let proposal_ids = session
+        .propose(
+            "op_00000000000000000000000000000001"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            &"the counterpart".to_owned(),
+            &mut ProductInference,
+            &mut SequentialIdentifiers::default(),
+        )
+        .expect("proposed");
+    session
+        .admit(
+            "op_00000000000000000000000000000002"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            &proposal_ids[0],
+            &OwnerAuthority,
+        )
+        .expect("admitted");
+
+    let error = session
+        .turn_ok::<ProductEffect>(
+            "op_00000000000000000000000000000003"
+                .parse::<OperationId>()
+                .expect("canonical operation id"),
+            &proposal_ids,
+            Vec::new(),
+        )
+        .expect_err("a decided proposal is not still awaiting a decision");
+    assert_eq!(error.code(), ErrorCode::UnknownProposal);
+
+    // A failed turn is reported, not lost.
+    let outcome: TurnOutcome<ProductProposal, ProductEffect> = Err(error).into();
+    assert!(matches!(outcome, TurnOutcome::Error { .. }));
 }
