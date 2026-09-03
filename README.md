@@ -32,8 +32,19 @@ downloading, loads only after an explicit call, runs generation in a dedicated w
 reports `ready` separately from cached, loading, and failed states. It returns text only;
 the consuming product still owns proposal meaning, authority, and effects.
 
-See [Architecture](docs/architecture.md), [Browser-local inference](docs/browser-local-inference.md),
-and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a product
+A product runtime consumes this repository as a library. `aiai-runtime` re-exports the
+contract crate and ships a prelude, so a product adds one dependency rather than two pinned
+to the same revision:
+
+```toml
+[dependencies]
+aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.1.0" }
+```
+
+See [Consuming the foundation](docs/consuming.md) for the port, failure, and pinning
+contract, [Architecture](docs/architecture.md) for what the shapes guarantee,
+[Browser-local inference](docs/browser-local-inference.md) for the WebLLM adapter, and
+[Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a product
 repository composes these layers.
 
 ## Local verification

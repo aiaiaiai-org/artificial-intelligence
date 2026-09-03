@@ -17,10 +17,10 @@ dependency facts a reviewer would otherwise have to re-derive by reading imports
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 import tomllib
-import json
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -54,8 +54,21 @@ EXACT_DEPENDENCIES = {
 }
 
 WEBLLM_PACKAGE = ROOT / "packages/aiai-webllm/package.json"
-WEBLLM_RUNTIME_DEPENDENCIES = {"@mlc-ai/web-llm": "0.2.84"}
-PRODUCT_TERMS = ("avaia", "bond", "bondchain", "nilx-one", "spectate")
+
+# Which runtime dependencies the browser adapter may carry. Versions are pinned by
+# package-lock.json, not here: an architecture check should not need editing to bump a
+# dependency it already allows.
+WEBLLM_RUNTIME_DEPENDENCIES = {"@mlc-ai/web-llm"}
+
+# Product vocabulary that must not appear in a product-agnostic foundation. Docs are
+# exempt: they map product concepts onto these shapes and have to name both sides.
+PRODUCT_TERMS = ("avaia", "bond", "nilx-one", "spectate")
+PRODUCT_TERM_ROOTS = (
+    ROOT / "crates",
+    ROOT / "packages/aiai-webllm/src",
+    ROOT / "packages/aiai-webllm/tests",
+)
+PRODUCT_TERM_SUFFIXES = (".rs", ".ts")
 
 
 def dependency_names(path: pathlib.Path, include_dev: bool) -> set[str]:
@@ -88,20 +101,25 @@ def main() -> int:
         failures.append("missing browser-local inference package")
     else:
         package = json.loads(WEBLLM_PACKAGE.read_text(encoding="utf-8"))
-        dependencies = package.get("dependencies", {})
-        if dependencies != WEBLLM_RUNTIME_DEPENDENCIES:
+        declared = set(package.get("dependencies", {}))
+        if declared != WEBLLM_RUNTIME_DEPENDENCIES:
             failures.append(
                 "packages/aiai-webllm runtime dependencies must be exactly "
-                f"{WEBLLM_RUNTIME_DEPENDENCIES}, found {dependencies}"
+                f"{sorted(WEBLLM_RUNTIME_DEPENDENCIES)}, found {sorted(declared)}"
             )
 
-        source_root = WEBLLM_PACKAGE.parent / "src"
-        for path in sorted(source_root.glob("*.ts")):
+    for root in PRODUCT_TERM_ROOTS:
+        if not root.is_dir():
+            failures.append(f"{root.relative_to(ROOT)}: missing source root")
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in PRODUCT_TERM_SUFFIXES or not path.is_file():
+                continue
             source = path.read_text(encoding="utf-8").casefold()
             present = [term for term in PRODUCT_TERMS if term in source]
             if present:
                 failures.append(
-                    f"{path.relative_to(ROOT)}: product vocabulary in foundation adapter: "
+                    f"{path.relative_to(ROOT)}: product vocabulary in the foundation: "
                     f"{', '.join(present)}"
                 )
 

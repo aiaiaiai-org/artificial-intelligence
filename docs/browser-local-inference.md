@@ -25,13 +25,26 @@ probing.
 ```text
 idle -> probing -> supported(cached: false|true) -> loading -> ready -> generating
              \-> unavailable                    \-> failed     \-> failed
+                                                                  |
+                                                        load() ---+  (no download)
 ```
 
 Only `ready` and `generating` prove that local inference is available on the current device;
-`isLocalModelOperational(state)` implements exactly that check.
+`isLocalModelOperational(state)` implements exactly that check, and `stream()` permits
+generation from `ready` alone. A state a product renders as unavailable is therefore never a
+state that quietly still generates.
+
 `supported(cached: true)` means artifacts exist, not that a model engine has successfully
 initialized. This distinction is deliberately suitable for a UI that must not display an AI
 as locally authorized while its model is downloading, preparing, unavailable, or failed.
+
+A generation that fails leaves the engine loaded but the lifecycle in `failed`, which is
+observable to every subscriber. Calling `load()` again returns it to `ready` without
+creating an engine or downloading anything, so recovery is explicit rather than implicit in
+the next generation attempt.
+
+`unload()` reports the cache state it actually observed rather than assuming that a loaded
+model is still cached.
 
 Failures are observable and there is no remote fallback. A product may add a remote model as
 a separate provider, but it must report that provider transition instead of silently
@@ -71,6 +84,12 @@ neither after the call.
 - No tools, effect adapters, ambient network access, durable memory, or background wakeups.
 - No automatic download, retry, model fallback, or remote inference.
 - `unload()` releases GPU resources but intentionally keeps downloaded browser-cache data.
+- Recovery from a failed generation is an explicit `load()`, not an automatic retry.
 
 These limits make the adapter usable without allowing a model response to bypass the
 foundation's authority boundary.
+
+## Related
+
+- [Consuming the foundation](consuming.md) — where generated text becomes a product proposal
+- [Foundation architecture](architecture.md)
