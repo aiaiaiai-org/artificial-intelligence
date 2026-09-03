@@ -20,6 +20,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import tomllib
+import json
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -52,6 +53,10 @@ EXACT_DEPENDENCIES = {
     "crates/aiai-runtime/Cargo.toml": {"aiai-contracts"},
 }
 
+WEBLLM_PACKAGE = ROOT / "packages/aiai-webllm/package.json"
+WEBLLM_RUNTIME_DEPENDENCIES = {"@mlc-ai/web-llm": "0.2.84"}
+PRODUCT_TERMS = ("avaia", "bond", "bondchain", "nilx-one", "spectate")
+
 
 def dependency_names(path: pathlib.Path, include_dev: bool) -> set[str]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -78,6 +83,27 @@ def main() -> int:
             failures.append(
                 f"{relative}: dependencies must be exactly {sorted(expected)}, found {sorted(actual)}"
             )
+
+    if not WEBLLM_PACKAGE.is_file():
+        failures.append("missing browser-local inference package")
+    else:
+        package = json.loads(WEBLLM_PACKAGE.read_text(encoding="utf-8"))
+        dependencies = package.get("dependencies", {})
+        if dependencies != WEBLLM_RUNTIME_DEPENDENCIES:
+            failures.append(
+                "packages/aiai-webllm runtime dependencies must be exactly "
+                f"{WEBLLM_RUNTIME_DEPENDENCIES}, found {dependencies}"
+            )
+
+        source_root = WEBLLM_PACKAGE.parent / "src"
+        for path in sorted(source_root.glob("*.ts")):
+            source = path.read_text(encoding="utf-8").casefold()
+            present = [term for term in PRODUCT_TERMS if term in source]
+            if present:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: product vocabulary in foundation adapter: "
+                    f"{', '.join(present)}"
+                )
 
     if failures:
         print("\n".join(failures), file=sys.stderr)

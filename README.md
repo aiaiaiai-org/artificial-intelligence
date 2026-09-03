@@ -11,6 +11,9 @@ crates/
 ├── aiai-contracts   # binding-safe versioned values, closed envelopes, typed failures
 ├── aiai-runtime     # replaceable-computation kernel: continuity, activation, authority
 └── aiai-signal      # closed-schema behavioral signal transform and validator
+
+packages/
+└── aiai-webllm      # explicit browser-local WebGPU/WebLLM inference lifecycle
 ```
 
 Dependency direction is one-way: `aiai-runtime` and `aiai-signal` depend only on
@@ -24,9 +27,14 @@ decision, replacing a runtime cannot mint a different subject, a dormant runtime
 nothing, an unavailable port is a typed failure rather than a substituted value, and a
 behavioral signal carries no field its schema did not declare.
 
-See [Architecture](docs/architecture.md), and
-[Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a product
-repository composes these crates.
+The WebLLM adapter is the first concrete inference implementation. It probes WebGPU without
+downloading, loads only after an explicit call, runs generation in a dedicated worker, and
+reports `ready` separately from cached, loading, and failed states. It returns text only;
+the consuming product still owns proposal meaning, authority, and effects.
+
+See [Architecture](docs/architecture.md), [Browser-local inference](docs/browser-local-inference.md),
+and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a product
+repository composes these layers.
 
 ## Local verification
 
@@ -36,6 +44,10 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 python3 scripts/check_architecture.py
 python scripts/check_repository_policy.py Apache-2.0
+npm ci
+npm run typecheck:web
+npm run test:web
+npm run build:web
 ```
 
 Dependency license, source, and advisory policy is enforced with `cargo deny check` in CI.

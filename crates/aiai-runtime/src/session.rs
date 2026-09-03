@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 const fn context_port(port: PortKind) -> ContextPort {
     match port {
         PortKind::Clock => ContextPort::Clock,
-        PortKind::Entropy | PortKind::IdentifierGeneration => ContextPort::Entropy,
+        PortKind::Entropy => ContextPort::Entropy,
+        PortKind::IdentifierGeneration => ContextPort::IdentifierGeneration,
         PortKind::Inference => ContextPort::Inference,
         PortKind::Authority => ContextPort::Authority,
     }

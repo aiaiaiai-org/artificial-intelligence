@@ -50,6 +50,7 @@ impl ErrorCode {
 pub enum ContextPort {
     Clock,
     Entropy,
+    IdentifierGeneration,
     Inference,
     Authority,
     Activation,

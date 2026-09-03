@@ -112,6 +112,27 @@ boundary is unambiguous:
    `SchemaRegistry`, with the governance process that reviews joint resolution across
    fields — not only field names.
 
+## First Avaia vertical slice
+
+The foundation now supplies `@aiaiaiai/webllm`, a concrete browser-local inference adapter.
+It is enough for the first Avaia slice without moving Avaia semantics into this repository:
+
+1. `nilx-one/web` probes local WebGPU support. Probing never downloads a model.
+2. The person explicitly starts the model download/load. The adapter reports supported,
+   cached, loading, ready, unavailable, and failed as distinct facts.
+3. `nilx-one/ai` supplies the Avaia system prompt and a bounded text history, then receives a
+   streamed text result from `Qwen3-0.6B-q4f16_1-MLC`.
+4. That result is a dialogue proposal. It is not an authorized message and cannot create a
+   BondChain record. Any later delivery still passes through the product authority and
+   effect boundaries.
+5. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
+   generation and may unload GPU resources; neither operation changes the AI Bond's identity.
+
+For this slice, Avaia can respond locally in the current conversation and expose truthful
+runtime state. It has no tools, durable memory, autonomous background life, remote fallback,
+or ability to claim that another Bond acted. Those are separate product capabilities with
+separate authority and completion contracts.
+
 ## Two things `nilx-one/ai` must not do
 
 **Do not model completion in the AI layer.** If `ai` grows a type meaning "this interaction
@@ -131,6 +152,10 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 python3 scripts/check_architecture.py
 python scripts/check_repository_policy.py Apache-2.0
+npm ci
+npm run typecheck:web
+npm run test:web
+npm run build:web
 ```
 
 The boundary claims above are the ones under test. `crates/aiai-runtime/tests/` covers the
@@ -141,6 +166,7 @@ idempotence, and a forked client's payloads meeting the validator.
 ## Related
 
 - [Foundation Architecture](architecture.md)
+- [Browser-local inference](browser-local-inference.md)
 - [`nilx-one/0x1`](https://github.com/nilx-one/0x1) — protocol specification
 - [`nilx-one/core`](https://github.com/nilx-one/core) — deterministic shared product behavior
 - [`nilx-one/ai`](https://github.com/nilx-one/ai) — the 0x1 AI runtime

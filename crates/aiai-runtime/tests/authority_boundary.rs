@@ -4,8 +4,8 @@
 //! End-to-end checks that a model proposal cannot become an effect on its own.
 
 use aiai_contracts::{
-    CapabilityName, ControllerId, ErrorCode, ModelId, OperationId, ProposalEnvelope, ProposalId,
-    RuntimeId, SessionId, SubjectId,
+    CapabilityName, ContextPort, ControllerId, ErrorCode, ModelId, OperationId, ProposalEnvelope,
+    ProposalId, RuntimeId, SessionId, SubjectId,
 };
 use aiai_runtime::{
     ActivationTransition, Authority, AuthorityDecision, Candidate, Clock, ContinuityRelation,
@@ -46,6 +46,16 @@ impl IdentifierGeneration for CountingIdentifiers {
             .map_err(|_| PortError {
                 port: PortKind::IdentifierGeneration,
             })
+    }
+}
+
+struct UnavailableIdentifiers;
+
+impl IdentifierGeneration for UnavailableIdentifiers {
+    fn next_proposal_id(&mut self) -> Result<ProposalId, PortError> {
+        Err(PortError {
+            port: PortKind::IdentifierGeneration,
+        })
     }
 }
 
@@ -210,6 +220,26 @@ fn an_unavailable_clock_is_not_a_substituted_timestamp() {
         .wake(operation(1), "peer_arrived", &UnavailableClock)
         .expect_err("a missing clock is reported");
     assert_eq!(error.code(), ErrorCode::MissingContext);
+}
+
+#[test]
+fn unavailable_identifier_generation_names_the_correct_port() {
+    let mut session = awake();
+    let error = session
+        .propose(
+            operation(1),
+            &(),
+            &mut scripted(),
+            &mut UnavailableIdentifiers,
+        )
+        .expect_err("missing identifier generation is reported");
+
+    assert_eq!(error.code(), ErrorCode::MissingContext);
+    assert_eq!(
+        error.details().and_then(|details| details.port),
+        Some(ContextPort::IdentifierGeneration)
+    );
+    assert_eq!(session.pending_proposals(), 0);
 }
 
 #[test]

@@ -29,10 +29,19 @@ crates/
 ├── aiai-contracts   # binding-safe versioned values, closed envelopes, typed failures
 ├── aiai-runtime     # replaceable-computation kernel: continuity, activation, authority
 └── aiai-signal      # closed-schema behavioral signal transform and validator
+
+packages/
+└── aiai-webllm      # browser-local inference adapter; no product semantics or authority
 ```
 
 Dependency direction is one-way. `aiai-runtime` depends only on `aiai-contracts`.
 `aiai-signal` depends only on `aiai-contracts`. Contracts depend on neither.
+
+`aiai-webllm` is a platform adapter rather than a Rust workspace member. It owns browser
+capability probing, model cache/load lifecycle, a dedicated Web Worker, and streaming text
+generation. It does not import the Rust runtime and does not reinterpret generated text as
+an admitted action. A product may turn that text into its own proposal payload, but the
+existing proposal → authority → dispatch boundary still governs any effect.
 
 ## The three separations
 
@@ -165,5 +174,6 @@ enforces that, plus NFC strings and ASCII object member names.
 
 ## Related
 
+- [Browser-local inference](browser-local-inference.md) — concrete WebGPU/WebLLM adapter
 - [Integrating a product AI runtime](nilx-one-ai-integration.md) — how a product repository
   composes these crates, worked through `nilx-one/ai`.
