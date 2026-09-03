@@ -156,10 +156,19 @@ It is enough for the first Avaia slice without moving Avaia semantics into this 
    cached, loading, ready, unavailable, and failed as distinct facts.
 3. `nilx-one/ai` supplies the Avaia system prompt and a bounded text history, then receives a
    streamed text result from `Qwen3-0.6B-q4f16_1-MLC`.
-4. That result is a dialogue proposal. It is not an authorized message and cannot create a
+4. `ai` wraps that text as its own proposal payload and hands it to
+   `RuntimeSession::propose_candidates`. The adapter is asynchronous and the `Inference`
+   port is not, so the model runs on the product's side of that boundary and only its
+   result crosses — the session still mints the proposal identifier, sequence, operation,
+   and contract version, and still owns the envelope.
+5. That result is a dialogue proposal. It is not an authorized message and cannot create a
    BondChain record. Any later delivery still passes through the product authority and
    effect boundaries.
-5. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
+
+   A `failed` or `unavailable` adapter state is `ai`'s own outcome to report. There is no
+   inference port on this path to raise it, so an unreachable model must surface as an
+   explicit degraded turn rather than as an empty batch.
+6. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
    generation and may unload GPU resources; neither operation changes the AI Bond's identity.
 
 For this slice, Avaia can respond locally in the current conversation and expose truthful

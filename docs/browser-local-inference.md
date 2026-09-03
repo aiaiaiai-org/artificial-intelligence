@@ -77,6 +77,31 @@ The result is generated text, not authority, an effect, an acknowledgement, or e
 completion. The product owns the system prompt and conversation history. The adapter retains
 neither after the call.
 
+## Reaching the kernel
+
+The Rust `Inference` port is synchronous and this adapter is asynchronous, so the adapter
+deliberately does not implement that port — satisfying it would mean blocking a browser
+thread on a model. The product awaits the text on its own side and hands the result to
+`RuntimeSession::propose_candidates`, which mints and owns the resulting proposal exactly as
+it would one produced through the port:
+
+```ts
+const text = await collect(local.stream(history));
+```
+
+```rust
+session.propose_candidates(
+    operation_id,
+    vec![Candidate { requested_capability, proposal: product_payload(text) }],
+    &mut identifiers,
+)?;
+```
+
+The authority boundary is unchanged: the result is a pending proposal that an `Authority`
+decision must admit before anything is attempted. What the product takes on is reporting its
+own failures — a `failed` or `unavailable` adapter state is an explicit degraded outcome, never
+an empty batch handed to the session as a successful turn.
+
 ## Deliberate first-slice limits
 
 - Text input and streamed text output only.

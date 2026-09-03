@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    ActivationState, ActivationTransition, Admitted, Authority, AuthorityDecision, Clock,
-    ContinuityRelation, DelegationScope, IdentifierGeneration, Inference, PortError, PortKind,
-    SubjectBinding,
+    ActivationState, ActivationTransition, Admitted, Authority, AuthorityDecision, Candidate,
+    Clock, ContinuityRelation, DelegationScope, IdentifierGeneration, Inference, PortError,
+    PortKind, SubjectBinding,
 };
 use aiai_contracts::{
     AdmissionEnvelope, ContextPort, ContractVersion, DecimalU64, EffectRequestEnvelope,
@@ -247,15 +247,18 @@ impl<P> RuntimeSession<P> {
     /// [`RuntimeSession::pending_proposal`] lends for display or serialization and
     /// [`RuntimeSession::admit`] reads when an authority decides.
     ///
+    /// Computation that cannot be reached through a synchronous port — a model in another
+    /// process, another language, or behind an async boundary — goes through
+    /// [`RuntimeSession::propose_candidates`] instead.
+    ///
     /// # Errors
     ///
     /// Returns [`FoundationError::runtime_inactive`] unless the session is active,
-    /// [`FoundationError::inference_unavailable`] when computation cannot answer,
-    /// [`FoundationError::missing_context`] when identifier generation is unavailable,
-    /// [`FoundationError::duplicate_proposal_id`] when identifier generation repeats an
-    /// identifier this session already holds, and [`FoundationError::sequence_exhausted`]
-    /// at a counter ceiling. An unavailable runtime never yields an empty success, and
-    /// none of these failures leaves a pending proposal behind.
+    /// [`FoundationError::inference_unavailable`] when computation cannot answer, and
+    /// whatever [`RuntimeSession::propose_candidates`] returns for the batch itself. A
+    /// dormant session never reaches the inference port at all, an unavailable runtime
+    /// never yields an empty success, and none of these failures leaves a pending proposal
+    /// behind.
     pub fn propose<I>(
         &mut self,
         operation_id: OperationId,
@@ -273,6 +276,45 @@ impl<P> RuntimeSession<P> {
         let candidates = inference
             .propose(request)
             .map_err(|_| FoundationError::inference_unavailable(Some(operation_id.clone())))?;
+
+        self.propose_candidates(operation_id, candidates, identifiers)
+    }
+
+    /// Records candidates that computation already produced elsewhere.
+    ///
+    /// The [`Inference`] port is synchronous, which a model reached across an async or
+    /// foreign-language boundary — a browser worker, a separate process, a remote service —
+    /// cannot satisfy without blocking. Such a runtime runs its computation on its own side
+    /// and hands the resulting candidates here.
+    ///
+    /// This grants a caller nothing that the [`Inference`] port does not. A candidate is
+    /// pre-proposal input in both paths: the session still mints the `proposal_id`,
+    /// `sequence`, `operation_id`, and `contract_version`, still owns the resulting
+    /// envelopes, and still requires an [`Authority`] decision before any of them can
+    /// become an action. What the caller does take on is reporting its own computation
+    /// failure: there is no port here to return [`PortError`], so an unreachable model is
+    /// the caller's explicit outcome to surface rather than an empty batch passed off as
+    /// success.
+    ///
+    /// Staging and commit are the same as [`RuntimeSession::propose`], so a failed batch
+    /// mutates nothing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FoundationError::runtime_inactive`] unless the session is active,
+    /// [`FoundationError::missing_context`] when identifier generation is unavailable,
+    /// [`FoundationError::duplicate_proposal_id`] when identifier generation repeats an
+    /// identifier this session already holds, and [`FoundationError::sequence_exhausted`]
+    /// at a counter ceiling.
+    pub fn propose_candidates(
+        &mut self,
+        operation_id: OperationId,
+        candidates: Vec<Candidate<P>>,
+        identifiers: &mut impl IdentifierGeneration,
+    ) -> Result<Vec<ProposalId>, FoundationError> {
+        if !self.activation.may_initiate() {
+            return Err(FoundationError::runtime_inactive(Some(operation_id)));
+        }
 
         // Stage. Nothing below this point reads or writes committed session state, so
         // returning early here leaves the session exactly as it was found.

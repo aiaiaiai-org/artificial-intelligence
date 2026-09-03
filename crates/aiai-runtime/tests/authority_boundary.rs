@@ -8,8 +8,8 @@
 //! and nothing else, and a failed proposal round leaves no session state behind.
 
 use aiai_contracts::{
-    CapabilityName, ContextPort, ControllerId, ErrorCode, ModelId, OperationId, ProposalEnvelope,
-    ProposalId, RuntimeId, SessionId, SubjectId,
+    CapabilityName, ContextPort, ContractVersion, ControllerId, ErrorCode, ModelId, OperationId,
+    ProposalEnvelope, ProposalId, RuntimeId, SessionId, SubjectId,
 };
 use aiai_runtime::{
     ActivationState, ActivationTransition, Authority, AuthorityDecision, Candidate, Clock,
@@ -867,4 +867,145 @@ fn state_targeted_activation_never_settles_on_the_owners_behalf() {
 
     assert_eq!(error.code(), ErrorCode::RuntimeInactive);
     assert_eq!(session.activation(), ActivationState::Quiescing);
+}
+
+// ---------------------------------------------------------------------------
+// Candidates produced outside the synchronous Inference port
+//
+// A model behind an async or foreign-language boundary cannot satisfy `Inference`
+// without blocking. It hands its candidates to `propose_candidates` instead, which
+// must grant the caller nothing the port does not.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn externally_produced_candidates_are_minted_by_the_session() {
+    let mut session = awake();
+    let proposal_ids = session
+        .propose_candidates(
+            operation(1),
+            vec![Candidate {
+                requested_capability: capability("message"),
+                proposal: Utterance("generated elsewhere"),
+            }],
+            &mut CountingIdentifiers::default(),
+        )
+        .expect("an active session records externally produced candidates");
+
+    assert_eq!(proposal_ids.len(), 1);
+    let envelope = session
+        .pending_proposal(&proposal_ids[0])
+        .expect("the session owns it exactly as if inference had produced it");
+
+    // The caller supplied a capability and a payload. Everything that carries authority
+    // or ordering is the session's, and a Candidate has no field through which any of it
+    // could have been supplied.
+    assert_eq!(envelope.contract_version, ContractVersion::CURRENT);
+    assert_eq!(envelope.operation_id, operation(1));
+    assert_eq!(envelope.sequence, aiai_contracts::DecimalU64::new(1));
+    assert_eq!(envelope.proposal, Utterance("generated elsewhere"));
+}
+
+#[test]
+fn an_externally_produced_candidate_still_needs_authority() {
+    let mut session = awake();
+    let proposal_ids = session
+        .propose_candidates(
+            operation(1),
+            vec![Candidate {
+                requested_capability: capability("message"),
+                proposal: Utterance("generated elsewhere"),
+            }],
+            &mut CountingIdentifiers::default(),
+        )
+        .expect("recorded");
+
+    let error = session
+        .admit(
+            operation(2),
+            &proposal_ids[0],
+            &FixedAuthority(AuthorityDecision::Withhold),
+        )
+        .expect_err("computation that ran elsewhere is still only a proposal");
+    assert_eq!(error.code(), ErrorCode::AuthorityWithheld);
+    assert_eq!(session.pending_proposals(), 0);
+}
+
+#[test]
+fn a_dormant_session_records_no_externally_produced_candidates() {
+    let mut session = session();
+    let error = session
+        .propose_candidates(
+            operation(1),
+            vec![Candidate {
+                requested_capability: capability("message"),
+                proposal: Utterance("generated elsewhere"),
+            }],
+            &mut CountingIdentifiers::default(),
+        )
+        .expect_err("a dormant runtime records nothing, whoever computed it");
+    assert_eq!(error.code(), ErrorCode::RuntimeInactive);
+    assert_eq!(session.pending_proposals(), 0);
+}
+
+#[test]
+fn an_externally_produced_batch_is_transactional_too() {
+    let mut session = awake();
+    let revision_before = session.revision();
+
+    let error = session
+        .propose_candidates(
+            operation(1),
+            vec![
+                Candidate {
+                    requested_capability: capability("message"),
+                    proposal: Utterance("first"),
+                },
+                Candidate {
+                    requested_capability: capability("message"),
+                    proposal: Utterance("second"),
+                },
+            ],
+            &mut FailingIdentifiers {
+                available: 1,
+                issued: 0,
+            },
+        )
+        .expect_err("the batch fails on the second candidate");
+
+    assert_eq!(error.code(), ErrorCode::MissingContext);
+    assert_eq!(session.pending_proposals(), 0);
+    assert_eq!(session.revision(), revision_before);
+}
+
+#[test]
+fn a_dormant_session_never_reaches_the_inference_port() {
+    /// Inference that records whether it was consulted.
+    struct CountingInference(u8);
+
+    impl Inference for CountingInference {
+        type Request = ();
+        type Proposal = Utterance;
+
+        fn propose(&mut self, (): &()) -> Result<Vec<Candidate<Utterance>>, PortError> {
+            self.0 += 1;
+            Ok(Vec::new())
+        }
+    }
+
+    let mut session = session();
+    let mut inference = CountingInference(0);
+    let error = session
+        .propose(
+            operation(1),
+            &(),
+            &mut inference,
+            &mut CountingIdentifiers::default(),
+        )
+        .expect_err("a dormant runtime proposes nothing");
+
+    assert_eq!(error.code(), ErrorCode::RuntimeInactive);
+    assert_eq!(
+        inference.0, 0,
+        "a dormant session does not run computation before refusing"
+    );
 }

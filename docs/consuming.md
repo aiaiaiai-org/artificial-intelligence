@@ -91,10 +91,44 @@ let effect = session.dispatch(operation_id, admitted)?;
 `crates/aiai-runtime/tests/product_binding.rs` is this whole turn as an executable test,
 written against the prelude alone.
 
+### Computation that cannot be a synchronous port
+
+`Inference` is synchronous. A model reached across an async or foreign-language boundary — a
+browser worker, a separate process, a remote service — cannot satisfy it without blocking, so
+the product runs that computation on its own side and hands the result in:
+
+```rust
+// The product awaited its own model, wherever it runs.
+let text = local_adapter.generate(&history).await?;
+
+let proposal_ids = session.propose_candidates(
+    operation_id,
+    vec![Candidate {
+        requested_capability: "message".parse()?,
+        proposal: ProductProposal::Reply { text },
+    }],
+    &mut identifiers,
+)?;
+```
+
+This grants the caller nothing the port does not. A candidate is pre-proposal input on both
+paths: the session mints the `proposal_id`, `sequence`, `operation_id`, and
+`contract_version`, owns the resulting envelopes, and still requires an `Authority` decision
+before any of them becomes an action. `Candidate` carries a capability name and a payload and
+has no field through which ordering or provenance could be supplied.
+
+One thing does move to the caller. There is no port here to return `PortError`, so **an
+unreachable model is the product's own explicit outcome to report** — never an empty batch
+passed off as a successful turn. The foundation cannot make that distinction for computation
+it did not run.
+
 ### Failure semantics a product can rely on
 
-- `propose` returning `Err` mutated nothing: no pending proposal, no sequence advance, no
-  revision advance. There is no partial batch to reconcile and no hidden proposal.
+- `propose` and `propose_candidates` returning `Err` mutated nothing: no pending proposal, no
+  sequence advance, no revision advance. There is no partial batch to reconcile and no
+  hidden proposal.
+- A dormant session refuses before it reaches the inference port, so computation does not
+  run for a runtime that may not initiate work.
 - `admit` releases the pending proposal only on a terminal decision. An unavailable
   authority port leaves it pending, so the product may seek the same decision again.
 - An identifier the session does not hold is `UnknownProposal`, and the authority port is
@@ -116,7 +150,8 @@ written against the prelude alone.
 
 Text a model produced is computation. It becomes an attempt only by passing through
 `Authority`, and a browser-local adapter such as `@aiaiaiai/webllm` changes nothing about
-that: it returns text, and the product wraps it as a proposal payload.
+that: it returns text, the product wraps it as a proposal payload, and
+`propose_candidates` is where that payload enters a session.
 
 ## Related
 

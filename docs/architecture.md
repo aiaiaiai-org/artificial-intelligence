@@ -102,6 +102,10 @@ Each arrow is gated, and the third one is a type boundary rather than a conventi
 1. `propose` requires an active session. Inference output is a candidate, nothing more. The
    session keeps the canonical `ProposalEnvelope` values and returns only their
    `ProposalId`s; `pending_proposal` lends an original for rendering or serialization.
+   Computation that cannot be a synchronous port — a model behind an async or
+   foreign-language boundary — hands its candidates to `propose_candidates`, which mints
+   and owns them identically. Neither path lets a caller supply a `proposal_id`,
+   `sequence`, `operation_id`, or `contract_version`.
 2. `admit` takes a `ProposalId` — not an envelope — and resolves the proposal it decides
    from session-owned state. The port must return `Admit`, and the granted capability must
    fall inside the session's `DelegationScope`. The result is an `Admitted` value whose
