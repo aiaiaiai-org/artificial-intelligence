@@ -30,6 +30,10 @@ from `master`: a revision that only ever existed on a feature branch is orphaned
 branch is squash-merged or deleted, and every consumer pinned to it stops resolving. For the
 same reason foundation pull requests that consumers already pin are merged, not squashed.
 
+`Cargo.lock` is committed. CI runs `--locked`, so the checked-in resolution is the one that
+is verified; a consumer resolving this workspace as a git dependency still does its own
+resolution and is unaffected by it.
+
 `0.1.0` is a compatibility line, not a stability promise. `aiai_contracts::CONTRACT_VERSION`
 is the normative wire version, and `require_compatible_contract` checks a peer's claim
 before a payload is decoded.
