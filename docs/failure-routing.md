@@ -27,17 +27,17 @@ them slightly differently, which is the whole reason this lives here.
 | Kind | Codes | Retryable |
 |---|---|---|
 | `unavailable` | `missing_context`, `inference_unavailable` | **yes** |
-| `withheld` | `authority_withheld`, `authority_scope_exceeded` | no |
+| `withheld` | `authority_withheld` | no |
 | `gated` | `runtime_inactive` | no |
 | `exhausted` | `sequence_exhausted` | no |
-| `rejected` | `malformed_envelope`, `unsupported_contract_version`, `unknown_variant`, `subject_continuity_violation`, `unknown_proposal`, `duplicate_proposal_id`, `signal_schema_violation` | no |
+| `rejected` | `malformed_envelope`, `unsupported_contract_version`, `unknown_variant`, `subject_continuity_violation`, `unknown_proposal`, `duplicate_proposal_id`, `authority_scope_exceeded`, `signal_schema_violation` | no |
 
 ```rust
 use aiai_runtime::prelude::*;
 
 match error.code().kind() {
     FailureKind::Unavailable => retry_later(),        // nothing was decided
-    FailureKind::Withheld => show_the_decision(),     // a decision, not a fault
+    FailureKind::Withheld => show_the_decision(),     // authority answered no
     FailureKind::Gated => show_the_mode(),            // the runtime may not act now
     FailureKind::Rejected | FailureKind::Exhausted => report_to_an_operator(),
 }
@@ -47,14 +47,18 @@ match error.code().kind() {
 import { failureKind, isRetryable } from "@aiaiaiai/contracts";
 ```
 
-Three points the table is making, because each is easy to get wrong:
+Four points the table is making, because each is easy to get wrong:
 
-- **`missing_context` is `unavailable`, not a caller mistake.** The kernel reports every
-  `PortError` through it, so it is what an unreachable clock, identifier source or authority
-  looks like from outside. `details.port` says which one could not answer.
-- **`withheld` is not an error in the colloquial sense.** Authority answered; the answer was
-  no. A product that renders it as a malfunction is telling a person their owner's decision
-  was a bug.
+- **`missing_context` is `unavailable`, not a caller mistake.** The generic external-port
+  boundary uses it when the clock, identifier source, or authority cannot answer.
+  `details.port` says which one failed. Inference is deliberately separate:
+  `Session::propose` reports an inference port failure as `inference_unavailable`.
+- **`withheld` means authority answered no.** `authority_withheld` is a decision, not a
+  malfunction. A product that renders it as a fault is telling a person their owner's
+  decision was a bug.
+- **`authority_scope_exceeded` is `rejected`, not `withheld`.** Authority answered *admit*,
+  but the grant was broader than the session's delegation scope. The session rejects that
+  invalid grant; treating it as a normal refusal would hide a contract/scope violation.
 - **Retryable means the same call, unchanged, may succeed.** Only an unavailable port
   qualifies. `duplicate_proposal_id` is excluded even though a fresh identifier would
   succeed: that is a different call, made after replacing an identifier source that returned
