@@ -28,14 +28,14 @@ impl ErrorCode {
     /// Returns what kind of failure this code names.
     ///
     /// [`MissingContext`](Self::MissingContext) is [`Unavailable`](FailureKind::Unavailable)
-    /// rather than a caller mistake: the kernel reports every `PortError` through it, so it
-    /// is what an unreachable clock, identifier source, or authority looks like from
-    /// outside, and `details.port` says which one could not answer.
+    /// rather than a caller mistake: the generic external-port boundary uses it when the
+    /// clock, identifier source, or authority cannot answer. Inference has the dedicated
+    /// [`InferenceUnavailable`](Self::InferenceUnavailable) code, so that path stays explicit.
     #[must_use]
     pub const fn kind(self) -> FailureKind {
         match self {
             Self::MissingContext | Self::InferenceUnavailable => FailureKind::Unavailable,
-            Self::AuthorityWithheld | Self::AuthorityScopeExceeded => FailureKind::Withheld,
+            Self::AuthorityWithheld => FailureKind::Withheld,
             Self::RuntimeInactive => FailureKind::Gated,
             Self::SequenceExhausted => FailureKind::Exhausted,
             Self::MalformedEnvelope
@@ -44,6 +44,7 @@ impl ErrorCode {
             | Self::SubjectContinuityViolation
             | Self::UnknownProposal
             | Self::DuplicateProposalId
+            | Self::AuthorityScopeExceeded
             | Self::SignalSchemaViolation => FailureKind::Rejected,
         }
     }
@@ -51,10 +52,10 @@ impl ErrorCode {
     /// Returns whether the same operation, unchanged, may succeed if attempted again.
     ///
     /// Only an unavailable port qualifies. A withheld admission is a decision and repeating
-    /// it asks the same question of the same authority; a rejected input is rejected on
-    /// every attempt. `DuplicateProposalId` is deliberately not retryable even though a
-    /// fresh identifier would succeed — that is a different call, made after replacing an
-    /// identifier source that returned a value the session already held.
+    /// it asks the same question of the same authority; a rejected input or out-of-scope
+    /// grant is rejected on every attempt. `DuplicateProposalId` is deliberately not
+    /// retryable even though a fresh identifier would succeed — that is a different call,
+    /// made after replacing an identifier source that returned a value the session held.
     #[must_use]
     pub const fn is_retryable(self) -> bool {
         matches!(self.kind(), FailureKind::Unavailable)
@@ -95,13 +96,13 @@ impl ErrorCode {
 pub enum FailureKind {
     /// A port could not answer. Nothing was decided and nothing was substituted.
     Unavailable,
-    /// Authority declined, or a grant fell outside the session's scope. A decision was
-    /// taken; it simply was not the one the caller wanted.
+    /// Authority declined the requested admission. A decision was taken; it simply was not
+    /// the one the caller wanted.
     Withheld,
     /// The session's own activation state forbids the operation. Not a fault and not a
     /// decision — the runtime may not initiate work right now.
     Gated,
-    /// The input contradicts the contract or the session's own state.
+    /// The input, grant, or session state contradicts the contract.
     Rejected,
     /// A counter reached its ceiling. It fails closed rather than wrapping.
     Exhausted,
@@ -540,7 +541,7 @@ mod tests {
     fn omits_empty_details_from_the_wire_form() {
         let error = FoundationError::runtime_inactive(None);
         let encoded = canonical_json(&error).expect("canonical JSON");
-        assert_eq!(encoded, br#"{"code":"runtime_inactive"}"#);
+        assert_eq!(encoded, br#"{\"code\":\"runtime_inactive\"}"#);
     }
 
     #[test]
@@ -549,7 +550,7 @@ mod tests {
         let encoded = canonical_json(&error).expect("canonical JSON");
         assert_eq!(
             encoded,
-            br#"{"code":"missing_context","details":{"port":"inference"}}"#
+            br#"{\"code\":\"missing_context\",\"details\":{\"port\":\"inference\"}}"#
         );
         assert_eq!(error.code(), ErrorCode::MissingContext);
         assert_eq!(
