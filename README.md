@@ -13,7 +13,11 @@ crates/
 └── aiai-signal      # closed-schema behavioral signal transform and validator
 
 packages/
+├── aiai-contracts   # host-side mirror of the wire contract; zero runtime dependencies
 └── aiai-webllm      # explicit browser-local WebGPU/WebLLM inference lifecycle
+
+fixtures/
+└── contract-wire-0.2.0.json   # one corpus; the Rust crates and the mirror both answer it
 ```
 
 Dependency direction is one-way: `aiai-runtime` and `aiai-signal` depend only on
@@ -26,6 +30,12 @@ product's AI runtime needs: a model proposal cannot become an action without an 
 decision, replacing a runtime cannot mint a different subject, a dormant runtime produces
 nothing, an unavailable port is a typed failure rather than a substituted value, and a
 behavioral signal carries no field its schema did not declare.
+
+A product runtime speaks this contract from Rust; the client that renders it usually does
+not. `@aiaiaiai/contracts` is the host side of the same boundary — canonical JSON with no
+numeric tokens, decimal-string integers decoded as `bigint`, closed vocabularies that refuse
+what they do not know, and the activation gate a client renders. Both implementations answer
+one shared corpus, so a mirror that drifts fails a build rather than a payload.
 
 The WebLLM adapter is the first concrete inference implementation. It probes WebGPU without
 downloading, loads only after an explicit call, runs generation in a dedicated worker, and
@@ -44,9 +54,10 @@ aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.
 
 See [Consuming the foundation](docs/consuming.md) for the port, failure, and pinning
 contract, [Architecture](docs/architecture.md) for what the shapes guarantee,
-[Browser-local inference](docs/browser-local-inference.md) for the WebLLM adapter, and
-[Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a product
-repository composes these layers.
+[The host side of the contract](docs/host-contract.md) for what a browser or messenger
+client consumes, [Browser-local inference](docs/browser-local-inference.md) for the WebLLM
+adapter, and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a
+product repository composes these layers.
 
 ## Local verification
 

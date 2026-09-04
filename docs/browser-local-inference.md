@@ -117,4 +117,5 @@ foundation's authority boundary.
 ## Related
 
 - [Consuming the foundation](consuming.md) — where generated text becomes a product proposal
+- [The host side of the contract](host-contract.md) — the other host-side package
 - [Foundation architecture](architecture.md)

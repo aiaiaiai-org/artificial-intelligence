@@ -1,0 +1,703 @@
+{
+  "contract_version": "0.2.0",
+  "purpose": "One corpus, checked by both implementations of foundation contract 0.2.0: the Rust crates under crates/ and the host-side package under packages/aiai-contracts. A mirror that drifts fails the side that drifted.",
+  "contract_versions": {
+    "accepted": [
+      "0.0.0",
+      "0.1.0",
+      "0.2.0",
+      "0.2.1",
+      "1.0.0",
+      "10.20.30"
+    ],
+    "rejected": [
+      "",
+      "0.1",
+      "0.1.0.0",
+      "0.01.0",
+      "01.0.0",
+      "0.1.0-beta",
+      "0.1.0+build",
+      "0.1.x",
+      " 0.1.0",
+      "0.1.0 ",
+      "0..0",
+      "-1.0.0",
+      "0.1.\u0662"
+    ],
+    "compatibility": [
+      {
+        "required": "0.1.0",
+        "provider": "0.1.4",
+        "accepted": true
+      },
+      {
+        "required": "0.1.0",
+        "provider": "0.2.0",
+        "accepted": false
+      },
+      {
+        "required": "0.2.0",
+        "provider": "0.1.0",
+        "accepted": false
+      },
+      {
+        "required": "0.2.0",
+        "provider": "0.2.0",
+        "accepted": true
+      },
+      {
+        "required": "0.2.0",
+        "provider": "0.2.1",
+        "accepted": true
+      },
+      {
+        "required": "0.2.1",
+        "provider": "0.2.0",
+        "accepted": false
+      },
+      {
+        "required": "1.2.0",
+        "provider": "1.3.0",
+        "accepted": true
+      },
+      {
+        "required": "1.2.0",
+        "provider": "1.1.0",
+        "accepted": false
+      },
+      {
+        "required": "1.2.0",
+        "provider": "2.0.0",
+        "accepted": false
+      }
+    ],
+    "handshake": [
+      {
+        "requested": "0.2.0",
+        "accepted": true
+      },
+      {
+        "requested": "0.3.0",
+        "accepted": false,
+        "error": "{\"code\":\"unsupported_contract_version\",\"details\":{\"required_contract_version\":\"0.3.0\",\"supported_contract_version\":\"0.2.0\"}}"
+      },
+      {
+        "requested": "0.2.1",
+        "accepted": false,
+        "error": "{\"code\":\"unsupported_contract_version\",\"details\":{\"required_contract_version\":\"0.2.1\",\"supported_contract_version\":\"0.2.0\"}}"
+      },
+      {
+        "requested": "0.01.0",
+        "accepted": false,
+        "error": "{\"code\":\"unsupported_contract_version\",\"details\":{\"supported_contract_version\":\"0.2.0\"}}"
+      },
+      {
+        "requested": "",
+        "accepted": false,
+        "error": "{\"code\":\"unsupported_contract_version\",\"details\":{\"supported_contract_version\":\"0.2.0\"}}"
+      }
+    ]
+  },
+  "decimal_u64": {
+    "max": "18446744073709551615",
+    "accepted": [
+      "0",
+      "1",
+      "9",
+      "42",
+      "1764547200000",
+      "18446744073709551615"
+    ],
+    "rejected": [
+      "",
+      "01",
+      "-1",
+      "+1",
+      "1.0",
+      "1e3",
+      "0x10",
+      " 1",
+      "1 ",
+      "\u0661\u0662\u0663",
+      "18446744073709551616",
+      "99999999999999999999999"
+    ]
+  },
+  "identifiers": {
+    "subject": {
+      "prefix": "sub_",
+      "hex_length": 64,
+      "accepted": [
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sub_0000000000000000000000000000000000000000000000000000000000000000",
+        "sub_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "sub_0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+        "sub_",
+        "sub_gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "ctl_0123456789abcdef0123456789abcdef",
+        "",
+        " sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "controller": {
+      "prefix": "ctl_",
+      "hex_length": 32,
+      "accepted": [
+        "ctl_0123456789abcdef0123456789abcdef",
+        "ctl_00000000000000000000000000000000",
+        "ctl_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "ctl_0123456789ABCDEF0123456789ABCDEF",
+        "ctl_0123456789abcdef0123456789abcde",
+        "ctl_0123456789abcdef0123456789abcdef0",
+        "ctl_",
+        "ctl_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " ctl_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "runtime": {
+      "prefix": "rt_",
+      "hex_length": 32,
+      "accepted": [
+        "rt_0123456789abcdef0123456789abcdef",
+        "rt_00000000000000000000000000000000",
+        "rt_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "rt_0123456789ABCDEF0123456789ABCDEF",
+        "rt_0123456789abcdef0123456789abcde",
+        "rt_0123456789abcdef0123456789abcdef0",
+        "rt_",
+        "rt_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " rt_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "model": {
+      "prefix": "mdl_",
+      "hex_length": 32,
+      "accepted": [
+        "mdl_0123456789abcdef0123456789abcdef",
+        "mdl_00000000000000000000000000000000",
+        "mdl_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "mdl_0123456789ABCDEF0123456789ABCDEF",
+        "mdl_0123456789abcdef0123456789abcde",
+        "mdl_0123456789abcdef0123456789abcdef0",
+        "mdl_",
+        "mdl_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " mdl_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "session": {
+      "prefix": "ses_",
+      "hex_length": 32,
+      "accepted": [
+        "ses_0123456789abcdef0123456789abcdef",
+        "ses_00000000000000000000000000000000",
+        "ses_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "ses_0123456789ABCDEF0123456789ABCDEF",
+        "ses_0123456789abcdef0123456789abcde",
+        "ses_0123456789abcdef0123456789abcdef0",
+        "ses_",
+        "ses_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " ses_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "proposal": {
+      "prefix": "prp_",
+      "hex_length": 32,
+      "accepted": [
+        "prp_0123456789abcdef0123456789abcdef",
+        "prp_00000000000000000000000000000000",
+        "prp_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "prp_0123456789ABCDEF0123456789ABCDEF",
+        "prp_0123456789abcdef0123456789abcde",
+        "prp_0123456789abcdef0123456789abcdef0",
+        "prp_",
+        "prp_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " prp_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "operation": {
+      "prefix": "op_",
+      "hex_length": 32,
+      "accepted": [
+        "op_0123456789abcdef0123456789abcdef",
+        "op_00000000000000000000000000000000",
+        "op_ffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "op_0123456789ABCDEF0123456789ABCDEF",
+        "op_0123456789abcdef0123456789abcde",
+        "op_0123456789abcdef0123456789abcdef0",
+        "op_",
+        "op_gggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " op_0123456789abcdef0123456789abcdef"
+      ]
+    },
+    "sha256": {
+      "prefix": "sha256_",
+      "hex_length": 64,
+      "accepted": [
+        "sha256_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sha256_0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "rejected": [
+        "sha256_0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+        "sha256_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+        "sha256_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+        "sha256_",
+        "sha256_gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "",
+        " sha256_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      ]
+    }
+  },
+  "capability_names": {
+    "max_length": 64,
+    "accepted": [
+      "a",
+      "a1",
+      "message",
+      "deliver_asset",
+      "x_9_z",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "rejected": [
+      "",
+      "_x",
+      "X",
+      "MESSAGE",
+      "a__b",
+      "a_",
+      "a-b",
+      "1a",
+      "a b",
+      "\u0442\u0435\u0441\u0442",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+  },
+  "error_codes": [
+    "malformed_envelope",
+    "unsupported_contract_version",
+    "unknown_variant",
+    "missing_context",
+    "runtime_inactive",
+    "inference_unavailable",
+    "subject_continuity_violation",
+    "unknown_proposal",
+    "duplicate_proposal_id",
+    "authority_withheld",
+    "authority_scope_exceeded",
+    "sequence_exhausted",
+    "signal_schema_violation"
+  ],
+  "context_ports": [
+    "clock",
+    "identifier_generation",
+    "inference",
+    "authority"
+  ],
+  "variant_kinds": [
+    "wake_reason",
+    "proposal_kind",
+    "action_archetype",
+    "archetype_field"
+  ],
+  "schema_violations": [
+    "unknown_archetype",
+    "unknown_field",
+    "missing_field",
+    "value_out_of_domain",
+    "excess_precision",
+    "excess_cardinality",
+    "non_canonical_encoding",
+    "invalid_field_combination",
+    "schema_version_mismatch"
+  ],
+  "canonical_json": {
+    "accepted": [
+      {
+        "input": "{\"z\":\"2\",\"a\":\"1\"}",
+        "canonical": "{\"a\":\"1\",\"z\":\"2\"}"
+      },
+      {
+        "input": "{\"b\":[\"x\",null,true],\"a\":{}}",
+        "canonical": "{\"a\":{},\"b\":[\"x\",null,true]}"
+      },
+      {
+        "input": "{\"nested\":{\"z\":\"1\",\"a\":{\"c\":\"3\",\"b\":\"2\"}}}",
+        "canonical": "{\"nested\":{\"a\":{\"b\":\"2\",\"c\":\"3\"},\"z\":\"1\"}}"
+      },
+      {
+        "input": "\"h\u00e9llo\"",
+        "canonical": "\"h\u00e9llo\""
+      },
+      {
+        "input": "\"line\\nbreak \\\"quoted\\\" back\\\\slash\"",
+        "canonical": "\"line\\nbreak \\\"quoted\\\" back\\\\slash\""
+      },
+      {
+        "input": "\"\\u0001\"",
+        "canonical": "\"\\u0001\""
+      },
+      {
+        "input": "[]",
+        "canonical": "[]"
+      },
+      {
+        "input": "null",
+        "canonical": "null"
+      },
+      {
+        "input": "\"\"",
+        "canonical": "\"\""
+      }
+    ],
+    "rejected": [
+      {
+        "input": "42",
+        "reason": "number_token"
+      },
+      {
+        "input": "{\"a\":1}",
+        "reason": "number_token"
+      },
+      {
+        "input": "[1]",
+        "reason": "number_token"
+      },
+      {
+        "input": "{\"a\":1.5}",
+        "reason": "number_token"
+      },
+      {
+        "input": "\"e\\u0301\"",
+        "reason": "non_nfc_string"
+      },
+      {
+        "input": "{\"a\":\"e\\u0301\"}",
+        "reason": "non_nfc_string"
+      },
+      {
+        "input": "[\"e\\u0301\"]",
+        "reason": "non_nfc_string"
+      },
+      {
+        "input": "{\"\u043a\u043b\u044e\u0447\":\"1\"}",
+        "reason": "non_ascii_object_key"
+      },
+      {
+        "input": "{",
+        "reason": "malformed_json"
+      },
+      {
+        "input": "",
+        "reason": "malformed_json"
+      },
+      {
+        "input": "{\"a\":\"1\",}",
+        "reason": "malformed_json"
+      }
+    ]
+  },
+  "documents": {
+    "foundation_errors": [
+      "{\"code\":\"malformed_envelope\"}",
+      "{\"code\":\"malformed_envelope\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"unsupported_contract_version\",\"details\":{\"required_contract_version\":\"0.3.0\",\"supported_contract_version\":\"0.2.0\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"unknown_variant\",\"details\":{\"variant_kind\":\"wake_reason\"}}",
+      "{\"code\":\"unknown_variant\",\"details\":{\"variant_kind\":\"archetype_field\"},\"operation_id\":\"op_abababababababababababababababab\"}",
+      "{\"code\":\"missing_context\",\"details\":{\"port\":\"authority\"}}",
+      "{\"code\":\"missing_context\",\"details\":{\"port\":\"identifier_generation\"}}",
+      "{\"code\":\"runtime_inactive\"}",
+      "{\"code\":\"runtime_inactive\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"inference_unavailable\",\"details\":{\"port\":\"inference\"}}",
+      "{\"code\":\"subject_continuity_violation\",\"details\":{\"attempted_subject_id\":\"sub_abababababababababababababababababababababababababababababababab\",\"bound_subject_id\":\"sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"unknown_proposal\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\"}}",
+      "{\"code\":\"duplicate_proposal_id\",\"details\":{\"proposal_id\":\"prp_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"authority_withheld\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\"}}",
+      "{\"code\":\"authority_scope_exceeded\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"deliver_asset\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "{\"code\":\"sequence_exhausted\"}",
+      "{\"code\":\"signal_schema_violation\",\"details\":{\"field\":\"quantized_measure\",\"schema_violation\":\"excess_precision\"}}",
+      "{\"code\":\"signal_schema_violation\",\"details\":{\"schema_violation\":\"unknown_archetype\"}}"
+    ],
+    "wake_envelopes": [
+      "{\"contract_version\":\"0.2.0\",\"observed_at_unix_ms\":\"1764547200000\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"reason\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"session_id\":\"ses_0123456789abcdef0123456789abcdef\"}"
+    ],
+    "proposal_envelopes": [
+      "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"1\"}",
+      "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_abababababababababababababababab\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"requested_capability\":\"deliver_asset\",\"sequence\":\"18446744073709551615\"}"
+    ],
+    "admission_envelopes": [
+      "{\"action\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"contract_version\":\"0.2.0\",\"granted_capability\":\"message\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"sequence\":\"2\"}"
+    ],
+    "effect_request_envelopes": [
+      "{\"contract_version\":\"0.2.0\",\"effect\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"sequence\":\"3\"}"
+    ],
+    "turn_outcomes": [
+      "{\"ok\":{\"contract_version\":\"0.2.0\",\"effect_requests\":[{\"contract_version\":\"0.2.0\",\"effect\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"sequence\":\"3\"}],\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposals\":[{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"1\"},{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_abababababababababababababababab\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"requested_capability\":\"deliver_asset\",\"sequence\":\"18446744073709551615\"}],\"session_revision\":\"7\"}}",
+      "{\"ok\":{\"contract_version\":\"0.2.0\",\"effect_requests\":[],\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposals\":[],\"session_revision\":\"0\"}}",
+      "{\"error\":{\"code\":\"runtime_inactive\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}}",
+      "{\"error\":{\"code\":\"authority_withheld\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\"}}}"
+    ]
+  },
+  "invalid_documents": [
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"no_such_code\"}",
+      "carries": "a code outside the closed taxonomy"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"runtime_inactive\",\"extra\":\"x\"}",
+      "carries": "an undeclared member"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "carries": "no code member"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"unknown_proposal\",\"details\":{\"unknown_member\":\"x\"}}",
+      "carries": "an undeclared details member"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"unknown_proposal\",\"details\":{\"proposal_id\":\"prp_0123456789ABCDEF0123456789ABCDEF\"}}",
+      "carries": "an identifier that is not canonical"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"missing_context\",\"details\":{\"port\":\"storage\"}}",
+      "carries": "a port outside the closed vocabulary"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"runtime_inactive\",\"operation_id\":\"ses_0123456789abcdef0123456789abcdef\"}",
+      "carries": "a correlation handle of another identifier kind"
+    },
+    {
+      "shape": "foundation_error",
+      "document": "{\"code\":\"runtime_inactive\",\"details\":\"none\"}",
+      "carries": "details that are not an object"
+    },
+    {
+      "shape": "wake_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"observed_at_unix_ms\":\"1764547200000\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"reason\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"session_id\":\"sub_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}",
+      "carries": "a session member holding another identifier kind"
+    },
+    {
+      "shape": "wake_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"reason\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"session_id\":\"ses_0123456789abcdef0123456789abcdef\"}",
+      "carries": "a missing member"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\"}",
+      "carries": "a missing member"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"extra\":\"x\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"1\"}",
+      "carries": "an undeclared member"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"n\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":1}",
+      "carries": "a sequence carried as a JSON numeric token"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"01\"}",
+      "carries": "a sequence with a leading zero"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"18446744073709551616\"}",
+      "carries": "a sequence above the u64 ceiling"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"Message\",\"sequence\":\"1\"}",
+      "carries": "a capability name that is not canonical"
+    },
+    {
+      "shape": "proposal_envelope",
+      "document": "{\"contract_version\":\"0.2\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"1\"}",
+      "carries": "a contract version that is not canonical"
+    },
+    {
+      "shape": "effect_request_envelope",
+      "document": "{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"sequence\":\"3\"}",
+      "carries": "a missing payload member"
+    },
+    {
+      "shape": "turn_outcome",
+      "document": "{}",
+      "carries": "neither an ok nor an error member"
+    },
+    {
+      "shape": "turn_outcome",
+      "document": "{\"unknown\":{}}",
+      "carries": "a member that is neither ok nor error"
+    },
+    {
+      "shape": "turn_outcome",
+      "document": "{\"ok\":\"x\"}",
+      "carries": "an ok member that is not a turn"
+    },
+    {
+      "shape": "turn_outcome",
+      "document": "{\"ok\":{\"contract_version\":\"0.2.0\",\"effect_requests\":[{\"contract_version\":\"0.2.0\",\"effect\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"sequence\":\"3\"}],\"extra\":\"x\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposals\":[{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\",\"sequence\":\"1\"},{\"contract_version\":\"0.2.0\",\"operation_id\":\"op_abababababababababababababababab\",\"proposal\":{\"kind\":\"sample\",\"note\":\"computation, not an action\"},\"proposal_id\":\"prp_cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"requested_capability\":\"deliver_asset\",\"sequence\":\"18446744073709551615\"}],\"session_revision\":\"7\"}}",
+      "carries": "an undeclared member inside the turn"
+    },
+    {
+      "shape": "turn_outcome",
+      "document": "{\"error\":{\"code\":\"no_such_code\"}}",
+      "carries": "a code outside the closed taxonomy"
+    }
+  ],
+  "activation": {
+    "states": [
+      "dormant",
+      "active",
+      "quiescing"
+    ],
+    "transitions": [
+      "wake",
+      "quiesce",
+      "settle"
+    ],
+    "may_initiate": [
+      "active"
+    ],
+    "may_settle_in_flight": [
+      "active",
+      "quiescing"
+    ],
+    "apply": [
+      {
+        "state": "dormant",
+        "transition": "wake",
+        "result": "active"
+      },
+      {
+        "state": "dormant",
+        "transition": "quiesce",
+        "result": null
+      },
+      {
+        "state": "dormant",
+        "transition": "settle",
+        "result": null
+      },
+      {
+        "state": "active",
+        "transition": "wake",
+        "result": null
+      },
+      {
+        "state": "active",
+        "transition": "quiesce",
+        "result": "quiescing"
+      },
+      {
+        "state": "active",
+        "transition": "settle",
+        "result": null
+      },
+      {
+        "state": "quiescing",
+        "transition": "wake",
+        "result": null
+      },
+      {
+        "state": "quiescing",
+        "transition": "quiesce",
+        "result": null
+      },
+      {
+        "state": "quiescing",
+        "transition": "settle",
+        "result": "dormant"
+      }
+    ],
+    "resolve": [
+      {
+        "state": "dormant",
+        "target": "dormant",
+        "outcome": "settled"
+      },
+      {
+        "state": "dormant",
+        "target": "active",
+        "outcome": "step",
+        "transition": "wake"
+      },
+      {
+        "state": "dormant",
+        "target": "quiescing",
+        "outcome": "refused"
+      },
+      {
+        "state": "active",
+        "target": "dormant",
+        "outcome": "refused"
+      },
+      {
+        "state": "active",
+        "target": "active",
+        "outcome": "settled"
+      },
+      {
+        "state": "active",
+        "target": "quiescing",
+        "outcome": "step",
+        "transition": "quiesce"
+      },
+      {
+        "state": "quiescing",
+        "target": "dormant",
+        "outcome": "step",
+        "transition": "settle"
+      },
+      {
+        "state": "quiescing",
+        "target": "active",
+        "outcome": "refused"
+      },
+      {
+        "state": "quiescing",
+        "target": "quiescing",
+        "outcome": "settled"
+      }
+    ]
+  }
+}
