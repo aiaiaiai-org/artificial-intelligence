@@ -72,6 +72,55 @@ pub struct TurnOk<P, F> {
     pub effect_requests: Vec<EffectRequestEnvelope<F>>,
 }
 
+/// One failure, in the shape a consumer keeps.
+///
+/// A failure normally has to go two ways at once: into a durable record, and to whoever is
+/// waiting on the operation. This is the first of those — the row. It carries the failure
+/// unchanged, the moment it was recorded, and the correlation handles needed to find it
+/// again, so that every product's failure table has the same columns and a reader moving
+/// between two of them is reading the same thing.
+///
+/// The timestamp arrives from the caller because the foundation reads no clock: whatever
+/// serves the [`Clock`] port supplies it, and a record whose time could not be obtained is
+/// the caller's own outcome to handle rather than a substituted value.
+///
+/// No subject identifier appears here on purpose. `operation_id` inside the failure and
+/// `session_id` beside it are enough to correlate a record with the work that produced it,
+/// and a durable table keyed by the person a runtime acts for is a different artifact with
+/// a different retention contract — one the signal boundary in `aiai-signal` deliberately
+/// refuses to ship a transport for.
+///
+/// [`Clock`]: https://docs.rs/aiai-runtime
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FailureRecord {
+    pub contract_version: ContractVersion,
+    pub recorded_at_unix_ms: DecimalU64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
+    pub error: FoundationError,
+}
+
+impl FailureRecord {
+    /// Builds a record for `error` observed at `recorded_at_unix_ms`.
+    ///
+    /// The contract version is this build's, never one a caller supplies: a record that
+    /// claimed another line would misdescribe the vocabulary its own error code came from.
+    #[must_use]
+    pub fn new(
+        recorded_at_unix_ms: DecimalU64,
+        session_id: Option<SessionId>,
+        error: FoundationError,
+    ) -> Self {
+        Self {
+            contract_version: ContractVersion::CURRENT,
+            recorded_at_unix_ms,
+            session_id,
+            error,
+        }
+    }
+}
+
 /// Closed turn result: exactly one `ok` or `error` member.
 ///
 /// A runtime works in `Result`, and a turn is reported in this shape. The conversion

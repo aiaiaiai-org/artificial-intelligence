@@ -16,6 +16,7 @@ import {
   decodeAdmissionEnvelope,
   decodeCanonicalJson,
   decodeEffectRequestEnvelope,
+  decodeFailureRecord,
   decodeFoundationError,
   decodeProposalEnvelope,
   decodeTurnOutcome,
@@ -23,16 +24,20 @@ import {
   encodeAdmissionEnvelope,
   encodeCanonicalJson,
   encodeEffectRequestEnvelope,
+  encodeFailureRecord,
   encodeFoundationError,
   encodeProposalEnvelope,
   encodeTurnOutcome,
   encodeWakeEnvelope,
   ERROR_CODES,
+  FAILURE_KINDS,
+  failureKind,
   formatDecimalU64,
   IDENTIFIER_SHAPES,
   isCapabilityName,
   isDecimalU64,
   isIdentifier,
+  isRetryable,
   mayInitiate,
   maySettleInFlight,
   parseContractVersion,
@@ -42,6 +47,8 @@ import {
   SCHEMA_VIOLATIONS,
   VARIANT_KINDS,
   type ActivationState,
+  type ErrorCode,
+  type FailureKind,
   type IdentifierKind,
 } from "../src/index.js";
 import { passthroughDecoder, passthroughEncoder, readWireFixture } from "./fixture.js";
@@ -134,6 +141,32 @@ test("the closed vocabularies are spelled the same on both sides", () => {
   assert.deepEqual([...CONTEXT_PORTS], fixture.context_ports);
   assert.deepEqual([...VARIANT_KINDS], fixture.variant_kinds);
   assert.deepEqual([...SCHEMA_VIOLATIONS], fixture.schema_violations);
+});
+
+test("every code is classified exactly as the corpus says", () => {
+  assert.deepEqual([...FAILURE_KINDS], fixture.failure_classification.kinds);
+  const byCode = fixture.failure_classification.by_code;
+  assert.deepEqual(Object.keys(byCode).sort(), [...ERROR_CODES].sort());
+  for (const code of ERROR_CODES) {
+    const expected = byCode[code as ErrorCode];
+    assert.equal(failureKind(code), expected, code);
+    // Retryability is derived from the kind rather than listed per code, so the corpus
+    // cannot record a code that is retryable while its kind is not.
+    assert.equal(
+      isRetryable(code),
+      fixture.failure_classification.retryable_kinds.includes(expected as FailureKind),
+      code,
+    );
+  }
+});
+
+test("failure records survive a decode and re-encode unchanged", () => {
+  for (const document of fixture.documents.failure_records) {
+    const decoded = decodeFailureRecord(decodeCanonicalJson(document));
+    assert.equal(typeof decoded.recorded_at_unix_ms, "bigint");
+    assert.ok((ERROR_CODES as readonly string[]).includes(decoded.error.code));
+    assert.equal(encodeCanonicalJson(encodeFailureRecord(decoded)), document);
+  }
 });
 
 test("canonical JSON encodes to the bytes the corpus records", () => {
@@ -238,6 +271,8 @@ test("every invalid document in the corpus is refused", () => {
             return decodeEffectRequestEnvelope(value, passthroughDecoder);
           case "turn_outcome":
             return decodeTurnOutcome(value, passthroughDecoder, passthroughDecoder);
+          case "failure_record":
+            return decodeFailureRecord(value);
           default:
             throw new Error(`the corpus names an unknown shape: ${entry.shape}`);
         }

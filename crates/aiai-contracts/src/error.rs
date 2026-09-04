@@ -25,6 +25,41 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
+    /// Returns what kind of failure this code names.
+    ///
+    /// [`MissingContext`](Self::MissingContext) is [`Unavailable`](FailureKind::Unavailable)
+    /// rather than a caller mistake: the kernel reports every `PortError` through it, so it
+    /// is what an unreachable clock, identifier source, or authority looks like from
+    /// outside, and `details.port` says which one could not answer.
+    #[must_use]
+    pub const fn kind(self) -> FailureKind {
+        match self {
+            Self::MissingContext | Self::InferenceUnavailable => FailureKind::Unavailable,
+            Self::AuthorityWithheld | Self::AuthorityScopeExceeded => FailureKind::Withheld,
+            Self::RuntimeInactive => FailureKind::Gated,
+            Self::SequenceExhausted => FailureKind::Exhausted,
+            Self::MalformedEnvelope
+            | Self::UnsupportedContractVersion
+            | Self::UnknownVariant
+            | Self::SubjectContinuityViolation
+            | Self::UnknownProposal
+            | Self::DuplicateProposalId
+            | Self::SignalSchemaViolation => FailureKind::Rejected,
+        }
+    }
+
+    /// Returns whether the same operation, unchanged, may succeed if attempted again.
+    ///
+    /// Only an unavailable port qualifies. A withheld admission is a decision and repeating
+    /// it asks the same question of the same authority; a rejected input is rejected on
+    /// every attempt. `DuplicateProposalId` is deliberately not retryable even though a
+    /// fresh identifier would succeed — that is a different call, made after replacing an
+    /// identifier source that returned a value the session already held.
+    #[must_use]
+    pub const fn is_retryable(self) -> bool {
+        matches!(self.kind(), FailureKind::Unavailable)
+    }
+
     /// Returns the canonical wire token for this code.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -43,6 +78,52 @@ impl ErrorCode {
             Self::SequenceExhausted => "sequence_exhausted",
             Self::SignalSchemaViolation => "signal_schema_violation",
         }
+    }
+}
+
+/// What kind of failure a code names, for a consumer routing one somewhere.
+///
+/// A failure usually has to reach two places at once: a durable record an operator can
+/// read later, and a person who is waiting on the operation. Deciding which failures
+/// deserve which treatment means classifying all thirteen codes, and every consumer that
+/// did it separately would classify them slightly differently.
+///
+/// This says what happened. It deliberately does not say what to show, how loudly, or in
+/// which language — those follow from a product's own contract with the person reading it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureKind {
+    /// A port could not answer. Nothing was decided and nothing was substituted.
+    Unavailable,
+    /// Authority declined, or a grant fell outside the session's scope. A decision was
+    /// taken; it simply was not the one the caller wanted.
+    Withheld,
+    /// The session's own activation state forbids the operation. Not a fault and not a
+    /// decision — the runtime may not initiate work right now.
+    Gated,
+    /// The input contradicts the contract or the session's own state.
+    Rejected,
+    /// A counter reached its ceiling. It fails closed rather than wrapping.
+    Exhausted,
+}
+
+impl FailureKind {
+    /// Returns the canonical wire token for this kind.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unavailable => "unavailable",
+            Self::Withheld => "withheld",
+            Self::Gated => "gated",
+            Self::Rejected => "rejected",
+            Self::Exhausted => "exhausted",
+        }
+    }
+}
+
+impl fmt::Display for FailureKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 

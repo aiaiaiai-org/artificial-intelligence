@@ -182,6 +182,14 @@ unreachable authority is not approval; unavailable inference is not an empty suc
 becomes a typed `FoundationError` with a closed code and code-specific details, and the
 whole taxonomy is a closed enum rather than a string.
 
+Nothing here logs. There is no logger, exporter or transport in the workspace, and a crate
+that wrote to stderr would have reached the ambient environment behind the explicit ports —
+the same property that keeps the browser target building. What the foundation does own is
+the part every consumer would otherwise re-derive: `ErrorCode::kind` classifies all thirteen
+codes into five `FailureKind`s, and `FailureRecord` is the row a product stores. Which sink
+a failure reaches, and what a person is told, stay the product's decisions. See
+[Routing a failure](failure-routing.md).
+
 ## The signal boundary
 
 ```text
@@ -245,6 +253,7 @@ consumer does not is a rule about one process rather than about a boundary.
 
 - [Consuming the foundation](consuming.md) — how a product repository depends on these crates
 - [The host side of the contract](host-contract.md) — the same contract, in the client
+- [Routing a failure](failure-routing.md) — to a durable record and to a person
 - [Browser-local inference](browser-local-inference.md) — concrete WebGPU/WebLLM adapter
 - [Integrating a product AI runtime](nilx-one-ai-integration.md) — how a product repository
   composes these crates, worked through `nilx-one/ai`.

@@ -2,7 +2,7 @@
 
 Product-agnostic artificial intelligence foundation for the aiaiaiai ecosystem.
 
-This repository owns reusable AI execution primitives and contracts: model/inference interfaces, provider adapters, routing, runtime primitives, memory/planning/tool abstractions, evaluation, and common observability. Product-specific semantics belong in product-specific repositories.
+This repository owns reusable AI execution primitives and contracts: model/inference interfaces, provider adapters, routing, runtime primitives, memory/planning/tool abstractions, and evaluation. Product-specific semantics belong in product-specific repositories, and so does observability: the workspace classifies a failure and gives it a row shape, but writes, sends and renders nothing.
 
 ## Workspace
 
@@ -66,7 +66,8 @@ See [Consuming the foundation](docs/consuming.md) for the port, failure, and pin
 contract, [Releasing](docs/releasing.md) for how a version is cut and what to pin,
 [Architecture](docs/architecture.md) for what the shapes guarantee,
 [The host side of the contract](docs/host-contract.md) for what a browser or messenger
-client consumes, [Browser-local inference](docs/browser-local-inference.md) for the WebLLM
+client consumes, [Routing a failure](docs/failure-routing.md) for how one reaches a record
+and a person, [Browser-local inference](docs/browser-local-inference.md) for the WebLLM
 adapter, and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a
 product repository composes these layers.
 

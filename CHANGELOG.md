@@ -44,6 +44,10 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   and `turn_ok` / `TurnOutcome`, so a turn is reported from session state rather than
   reconstructed by a caller.
 - `propose_candidates`, for computation that cannot be a synchronous port.
+- `ErrorCode::kind` and `is_retryable`, classifying all thirteen codes into five
+  `FailureKind`s, plus `FailureRecord` — the row a product stores. Both are mirrored in
+  `@aiaiaiai/contracts` and locked by the shared corpus. The kind is derived from the code
+  rather than carried beside it, so the contract line does not move.
 
 ### Notes for consumers
 

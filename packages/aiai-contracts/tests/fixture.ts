@@ -42,6 +42,11 @@ export interface WireFixture {
     readonly rejected: readonly string[];
   };
   readonly error_codes: readonly string[];
+  readonly failure_classification: {
+    readonly kinds: readonly string[];
+    readonly retryable_kinds: readonly string[];
+    readonly by_code: Readonly<Record<string, string>>;
+  };
   readonly context_ports: readonly string[];
   readonly variant_kinds: readonly string[];
   readonly schema_violations: readonly string[];
@@ -56,6 +61,7 @@ export interface WireFixture {
     readonly admission_envelopes: readonly string[];
     readonly effect_request_envelopes: readonly string[];
     readonly turn_outcomes: readonly string[];
+    readonly failure_records: readonly string[];
   };
   readonly invalid_documents: readonly {
     readonly shape: string;

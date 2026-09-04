@@ -48,6 +48,10 @@ implementations of one contract quietly stop agreeing.
 | `envelope` | the closed envelopes | wake, proposal, admission, effect request, and the turn report |
 | `activation` | `ActivationState` | the gate a client renders and requests modes against |
 
+`failureKind` and `isRetryable` classify a decoded failure the same way the kernel does, so
+a client can tell a withheld decision from an unreachable port without a table of its own.
+[Routing a failure](failure-routing.md) is that boundary in full.
+
 ```sh
 npm install @aiaiaiai/contracts
 ```

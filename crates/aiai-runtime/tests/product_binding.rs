@@ -409,3 +409,86 @@ fn reporting_a_proposal_the_session_no_longer_holds_is_refused() {
     let outcome: TurnOutcome<ProductProposal, ProductEffect> = Err(error).into();
     assert!(matches!(outcome, TurnOutcome::Error { .. }));
 }
+
+/// Computation that cannot answer, so a real `FoundationError` reaches the product.
+struct UnreachableInference;
+
+impl Inference for UnreachableInference {
+    type Request = String;
+    type Proposal = ProductProposal;
+
+    fn propose(&mut self, _request: &String) -> Result<Vec<Candidate<ProductProposal>>, PortError> {
+        Err(PortError::new(PortKind::Inference))
+    }
+}
+
+#[test]
+fn a_failure_reaches_a_durable_record_and_a_person_from_one_value() {
+    let mut session = product_session();
+    let operation = format!("op_{}", "1".repeat(32))
+        .parse::<OperationId>()
+        .expect("canonical operation id");
+    session
+        .ensure_activation(Some(operation.clone()), ActivationState::Active)
+        .expect("waking is defined from dormant");
+
+    let failure = session
+        .propose(
+            operation,
+            &"anything".to_owned(),
+            &mut UnreachableInference,
+            &mut SequentialIdentifiers(0),
+        )
+        .expect_err("unreachable computation is a failure, never an empty batch");
+
+    // One value answers both questions a product asks of a failure. Which sink it reaches,
+    // and what a person is told, stay the product's decisions — the foundation supplies
+    // neither a transport nor a sentence.
+    assert_eq!(failure.code(), ErrorCode::InferenceUnavailable);
+    assert_eq!(failure.code().kind(), FailureKind::Unavailable);
+    assert!(
+        failure.code().is_retryable(),
+        "an unreachable port may answer on a later attempt"
+    );
+
+    let record = FailureRecord::new(
+        StubClock.now_unix_ms().expect("the product's clock"),
+        Some(
+            format!("ses_{}", "a".repeat(32))
+                .parse::<SessionId>()
+                .expect("canonical session id"),
+        ),
+        failure,
+    );
+    assert_eq!(record.contract_version, ContractVersion::CURRENT);
+
+    // The record is canonical JSON, so the row a product writes is the payload a host
+    // decodes — there is no second encoding for a failure to disagree across.
+    let encoded = aiai_runtime::contracts::canonical_json(&record).expect("a record is canonical");
+    let decoded: FailureRecord =
+        serde_json::from_slice(&encoded).expect("a record decodes into itself");
+    assert_eq!(decoded, record);
+}
+
+#[test]
+fn a_failure_the_activation_gate_produced_is_not_retryable() {
+    let mut session = product_session();
+    let operation = format!("op_{}", "2".repeat(32))
+        .parse::<OperationId>()
+        .expect("canonical operation id");
+
+    // Dormant: the session refuses before computation runs, so this is not a port problem
+    // and repeating the same call unchanged answers the same way.
+    let failure = session
+        .propose(
+            operation,
+            &"anything".to_owned(),
+            &mut UnreachableInference,
+            &mut SequentialIdentifiers(0),
+        )
+        .expect_err("a dormant runtime initiates nothing");
+
+    assert_eq!(failure.code(), ErrorCode::RuntimeInactive);
+    assert_eq!(failure.code().kind(), FailureKind::Gated);
+    assert!(!failure.code().is_retryable());
+}

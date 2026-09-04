@@ -11,6 +11,7 @@ import {
   malformedEnvelope,
   type FoundationErrorValue,
 } from "./error.js";
+import type { SessionId as SessionIdentifier } from "./identifier.js";
 import {
   isIdentifier,
   type IdentifierKind,
@@ -349,6 +350,85 @@ export function decodeTurnOutcome<P, F>(
     };
   }
   return refuse(source);
+}
+
+/**
+ * One failure, in the shape a consumer keeps.
+ *
+ * A failure normally has to go two ways at once: into a durable record, and to whoever is
+ * waiting on the operation. This is the row. A host decodes one when it reads a failure
+ * table back, or encodes one when it is the side doing the writing.
+ *
+ * No subject identifier appears here on purpose. `operation_id` inside the failure and
+ * `session_id` beside it are enough to correlate a record with the work that produced it,
+ * and a durable table keyed by the person a runtime acts for is a different artifact with a
+ * different retention contract.
+ */
+export interface FailureRecord {
+  readonly contract_version: ContractVersion;
+  readonly recorded_at_unix_ms: bigint;
+  readonly session_id?: SessionIdentifier;
+  readonly error: FoundationErrorValue;
+}
+
+const FAILURE_RECORD_REQUIRED = ["contract_version", "recorded_at_unix_ms", "error"] as const;
+const FAILURE_RECORD_OPTIONAL = ["session_id"] as const;
+
+/**
+ * Decodes a failure record.
+ *
+ * `session_id` is the one optional member: a failure can happen before a session exists —
+ * a contract handshake refused, for one — and a record that invented a session for it would
+ * point a reader at work that never started.
+ *
+ * @throws {FoundationFailure} carrying `malformed_envelope` when the payload is not one.
+ */
+export function decodeFailureRecord(source: CanonicalJsonValue): FailureRecord {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    refuse(source);
+  }
+  const fields = source as Record<string, CanonicalJsonValue>;
+  for (const name of Object.keys(fields)) {
+    const known =
+      (FAILURE_RECORD_REQUIRED as readonly string[]).includes(name) ||
+      (FAILURE_RECORD_OPTIONAL as readonly string[]).includes(name);
+    if (!known) {
+      refuse(source);
+    }
+  }
+  for (const name of FAILURE_RECORD_REQUIRED) {
+    if (!(name in fields)) {
+      refuse(source);
+    }
+  }
+
+  const record: {
+    contract_version: ContractVersion;
+    recorded_at_unix_ms: bigint;
+    session_id?: SessionIdentifier;
+    error: FoundationErrorValue;
+  } = {
+    contract_version: readVersion(source, fields["contract_version"]),
+    recorded_at_unix_ms: readDecimal(source, fields["recorded_at_unix_ms"]),
+    error: decodeFoundationError(fields["error"] as CanonicalJsonValue),
+  };
+  if ("session_id" in fields) {
+    record.session_id = readIdentifier(source, fields["session_id"], "session");
+  }
+  return record;
+}
+
+/** Encodes a failure record back into its wire form, omitting an absent session. */
+export function encodeFailureRecord(record: FailureRecord): CanonicalJsonValue {
+  const encoded: Record<string, CanonicalJsonValue> = {
+    contract_version: formatContractVersion(record.contract_version),
+    recorded_at_unix_ms: formatDecimalU64(record.recorded_at_unix_ms),
+    error: encodeFoundationError(record.error),
+  };
+  if (record.session_id !== undefined) {
+    encoded["session_id"] = record.session_id;
+  }
+  return encoded;
 }
 
 /** Encodes a wake envelope back into its wire form. */
