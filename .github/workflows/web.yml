@@ -4,8 +4,9 @@
 name: Web adapter CI
 
 on:
+  # Every pull request, whatever it targets. A change stacked on another branch has to
+  # prove itself before that branch merges, not after.
   pull_request:
-    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:

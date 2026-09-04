@@ -73,9 +73,23 @@ pub struct TurnOk<P, F> {
 }
 
 /// Closed turn result: exactly one `ok` or `error` member.
+///
+/// A runtime works in `Result`, and a turn is reported in this shape. The conversion
+/// between them is total, so a failure cannot be dropped on the way out: every `Err`
+/// becomes an `error` member carrying the same typed failure, and no code path produces a
+/// turn that is neither.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TurnOutcome<P, F> {
     Ok { ok: TurnOk<P, F> },
     Error { error: FoundationError },
+}
+
+impl<P, F> From<Result<TurnOk<P, F>, FoundationError>> for TurnOutcome<P, F> {
+    fn from(result: Result<TurnOk<P, F>, FoundationError>) -> Self {
+        match result {
+            Ok(ok) => Self::Ok { ok },
+            Err(error) => Self::Error { error },
+        }
+    }
 }

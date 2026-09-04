@@ -22,12 +22,18 @@ class FakeEngine implements LocalTextEngine {
   public interrupted = false;
   public unloaded = false;
   public chunks = ["ві", "таю"];
+  public failAfter: number | undefined;
 
   public async *stream(
     _messages: readonly LocalMessage[],
     _options: Required<GenerationOptions>,
   ): AsyncIterable<string> {
+    let emitted = 0;
     for (const chunk of this.chunks) {
+      if (this.failAfter !== undefined && emitted >= this.failAfter) {
+        throw new Error("engine lost the device");
+      }
+      emitted += 1;
       yield chunk;
     }
   }
@@ -192,17 +198,90 @@ test("refuses generation before the model is ready", async () => {
   );
 });
 
-test("unload releases GPU resources but keeps cache availability", async () => {
+test("unload releases GPU resources and reports observed cache state", async () => {
   const host = new FakeHost();
   const runtime = new LocalInferenceRuntime(host);
   await runtime.load();
+  // A completed load left artifacts in browser cache.
+  host.cached = true;
 
   await runtime.unload();
 
   assert.equal(host.engine.unloaded, true);
   assert.deepEqual(runtime.state, {
     kind: "supported",
-    modelId: "Qwen3-0.6B-q4f16_1-MLC",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
     cached: true,
   });
+});
+
+test("a failed generation is observable and blocks further generation", async () => {
+  const host = new FakeHost();
+  host.engine.failAfter = 1;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.load();
+
+  await assert.rejects(
+    async () => {
+      for await (const _chunk of runtime.stream([
+        { role: "user", content: "привіт" },
+      ])) {
+        // draining the stream is what surfaces the engine failure
+      }
+    },
+    (error: unknown) =>
+      error instanceof LocalInferenceError &&
+      error.code === "generation_failed",
+  );
+
+  assert.equal(runtime.state.kind, "failed");
+  assert.equal(isLocalModelOperational(runtime.state), false);
+
+  // The state a product renders as unavailable is not a state that still generates.
+  await assert.rejects(
+    async () => {
+      for await (const _chunk of runtime.stream([
+        { role: "user", content: "знову" },
+      ])) {
+        // unreachable
+      }
+    },
+    (error: unknown) =>
+      error instanceof LocalInferenceError && error.code === "not_ready",
+  );
+});
+
+test("loading again recovers a failed generation without downloading", async () => {
+  const host = new FakeHost();
+  host.engine.failAfter = 0;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.load();
+  assert.equal(host.engineCreations, 1);
+
+  await assert.rejects(async () => {
+    for await (const _chunk of runtime.stream([
+      { role: "user", content: "привіт" },
+    ])) {
+      // unreachable
+    }
+  });
+  assert.equal(runtime.state.kind, "failed");
+
+  host.engine.failAfter = undefined;
+  await runtime.load();
+
+  assert.deepEqual(runtime.state, {
+    kind: "ready",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+  });
+  assert.equal(host.engineCreations, 1, "recovery creates no new engine");
+
+  const received: string[] = [];
+  for await (const chunk of runtime.stream([
+    { role: "user", content: "привіт" },
+  ])) {
+    received.push(chunk);
+  }
+  assert.deepEqual(received, ["ві", "таю"]);
+  assert.equal(isLocalModelOperational(runtime.state), true);
 });

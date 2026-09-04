@@ -76,20 +76,54 @@ runtime construct one, and Protocol Law 3 exists precisely because intent is not
 The current 0x1 product constrains an owned AI avatar to living only while its owner is
 spectating. That is a product policy, so it lives in `ai`:
 
+A mode names a state, not an edge. Mapping a mode onto a transition works only for the one
+edge that leaves the state the runtime happens to be in, so map modes onto states and let
+`ensure_activation` resolve the step:
+
 ```text
-SPECTATE -> ActivationTransition::Wake      (Dormant  -> Active)
-MANUAL   -> ActivationTransition::Quiesce   (Active   -> Quiescing)
-OFFLINE  -> ActivationTransition::Settle    (Quiescing -> Dormant)
+SPECTATE -> ActivationState::Active
+MANUAL   -> ActivationState::Quiescing
+OFFLINE  -> ActivationState::Dormant
 ```
+
+```rust
+impl AvaiaControlMode {
+    const fn activation_state(self) -> ActivationState {
+        match self {
+            Self::Spectate => ActivationState::Active,
+            Self::Manual => ActivationState::Quiescing,
+            Self::Offline => ActivationState::Dormant,
+        }
+    }
+}
+
+session.ensure_activation(operation_id, mode.activation_state())?;
+```
+
+Re-applying the mode a session is already in is then a no-op rather than an undefined
+transition, which matters for a client that renders the current mode on every reconnect.
 
 The foundation supplies what the mapping needs and refuses what it forbids. `Quiescing` may
 settle in-flight work but initiates nothing, which is the "in-flight action reaches a safe
-boundary" step. `Quiescing -> Wake` is undefined, so a client reconnect cannot silently
-resume a wound-down runtime. And going dormant leaves pending proposals pending rather than
-completing or cancelling them.
+boundary" step. `Quiescing -> Active` is refused by `ensure_activation` as well as by
+`apply_activation`: reaching it would mean settling first, and settling is the owner's
+assertion that in-flight work reached its boundary. So a client reconnect cannot silently
+resume a wound-down runtime, and a product that wants `MANUAL -> SPECTATE` says so as two
+explicit steps. Going dormant leaves pending proposals pending rather than completing or
+cancelling them.
 
 If a future 0x1 revision permits persistent autonomous life, the mapping changes in `ai`.
 The gate does not: the foundation never encoded spectate in the first place.
+
+### Proposals stay session-owned
+
+`propose` hands back `ProposalId`s and keeps the canonical envelopes. `ai` renders a pending
+proposal through `session.pending_proposal(&id)` and admits it by identifier, so an owner's
+decision applies to the proposal the session actually produced. There is no code path in
+which a transport round trip, a client re-render, or a replayed payload could substitute
+different content behind a legitimate identifier — `admit` accepts no proposal content at
+all. See [Consuming the foundation](consuming.md) for the failure semantics `ai` can rely
+on.
 
 ## What `nilx-one/ai` implements on top
 
@@ -104,8 +138,11 @@ boundary is unambiguous:
    authority questions.
 3. **The `Inference` port.** Provider selection, local versus remote computation, shared
    infrastructure, model fallback. All replaceable; none of it identity.
-4. **Persistence and scheduling.** Which subjects exist, when they wake, what durable state
-   they carry between activations.
+4. **Persistence and scheduling.** Which subjects exist, when they wake, and where their
+   state lives. The foundation supplies the shape — `RuntimeSession::snapshot` and
+   `restore`, with `SessionSnapshot` as the stored value — and refuses to seat a snapshot
+   that contradicts itself. Where those bytes are kept, how they are authenticated, and
+   what schedules a wake are `ai`'s decisions, and storage is `ai`'s trust boundary.
 5. **Effect adapters.** Turning an effect request into an actual attempt against `core` and
    the network, and reporting the real outcome rather than an assumed one.
 6. **Signal archetypes, if and when they are activated.** Concrete archetypes registered in
@@ -122,10 +159,19 @@ It is enough for the first Avaia slice without moving Avaia semantics into this 
    cached, loading, ready, unavailable, and failed as distinct facts.
 3. `nilx-one/ai` supplies the Avaia system prompt and a bounded text history, then receives a
    streamed text result from `Qwen3-0.6B-q4f16_1-MLC`.
-4. That result is a dialogue proposal. It is not an authorized message and cannot create a
+4. `ai` wraps that text as its own proposal payload and hands it to
+   `RuntimeSession::propose_candidates`. The adapter is asynchronous and the `Inference`
+   port is not, so the model runs on the product's side of that boundary and only its
+   result crosses — the session still mints the proposal identifier, sequence, operation,
+   and contract version, and still owns the envelope.
+5. That result is a dialogue proposal. It is not an authorized message and cannot create a
    BondChain record. Any later delivery still passes through the product authority and
    effect boundaries.
-5. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
+
+   A `failed` or `unavailable` adapter state is `ai`'s own outcome to report. There is no
+   inference port on this path to raise it, so an unreachable model must surface as an
+   explicit degraded turn rather than as an empty batch.
+6. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
    generation and may unload GPU resources; neither operation changes the AI Bond's identity.
 
 For this slice, Avaia can respond locally in the current conversation and expose truthful
@@ -166,6 +212,7 @@ idempotence, and a forked client's payloads meeting the validator.
 ## Related
 
 - [Foundation Architecture](architecture.md)
+- [Consuming the foundation](consuming.md) — the dependency, port, and pinning contract
 - [Browser-local inference](browser-local-inference.md)
 - [`nilx-one/0x1`](https://github.com/nilx-one/0x1) — protocol specification
 - [`nilx-one/core`](https://github.com/nilx-one/core) — deterministic shared product behavior

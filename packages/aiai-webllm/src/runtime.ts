@@ -88,6 +88,11 @@ export class LocalInferenceRuntime {
    */
   public load(): Promise<void> {
     if (this.#engine !== undefined) {
+      // The engine is already initialized. Calling `load` again is how a product returns
+      // an engine that failed one generation to `ready`; it never re-downloads.
+      if (this.#state.kind !== "ready" && this.#state.kind !== "generating") {
+        this.#setState({ kind: "ready", modelId: this.#modelId });
+      }
       return Promise.resolve();
     }
     if (this.#state.kind === "unavailable") {
@@ -154,6 +159,15 @@ export class LocalInferenceRuntime {
     }
     if (this.#state.kind === "generating") {
       throw new LocalInferenceError("busy", "generation is already in progress");
+    }
+    // Only `ready` permits generation, so a state a product renders as unavailable is
+    // never a state that quietly still generates. After a failed generation the engine is
+    // still loaded; `load()` returns it to `ready` without downloading anything.
+    if (this.#state.kind !== "ready") {
+      throw new LocalInferenceError(
+        "not_ready",
+        `local model is not ready: ${this.#state.kind}`,
+      );
     }
     if (messages.length === 0 || messages.some((message) => message.content.trim() === "")) {
       throw new LocalInferenceError(
@@ -234,11 +248,8 @@ export class LocalInferenceRuntime {
     try {
       await engine.unload();
       this.#engine = undefined;
-      this.#setState({
-        kind: "supported",
-        modelId: this.#modelId,
-        cached: true,
-      });
+      const cached = await this.#host.hasModelInCache(this.#modelId);
+      this.#setState({ kind: "supported", modelId: this.#modelId, cached });
     } catch (cause) {
       this.#setFailure("unload", true, cause);
       throw new LocalInferenceError("unload_failed", "local model failed to unload", {

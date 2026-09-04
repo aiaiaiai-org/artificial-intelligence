@@ -17,6 +17,7 @@ pub enum ErrorCode {
     InferenceUnavailable,
     SubjectContinuityViolation,
     UnknownProposal,
+    DuplicateProposalId,
     AuthorityWithheld,
     AuthorityScopeExceeded,
     SequenceExhausted,
@@ -36,6 +37,7 @@ impl ErrorCode {
             Self::InferenceUnavailable => "inference_unavailable",
             Self::SubjectContinuityViolation => "subject_continuity_violation",
             Self::UnknownProposal => "unknown_proposal",
+            Self::DuplicateProposalId => "duplicate_proposal_id",
             Self::AuthorityWithheld => "authority_withheld",
             Self::AuthorityScopeExceeded => "authority_scope_exceeded",
             Self::SequenceExhausted => "sequence_exhausted",
@@ -245,6 +247,26 @@ impl FoundationError {
     pub fn unknown_proposal(operation_id: Option<OperationId>, proposal_id: ProposalId) -> Self {
         Self::new(
             ErrorCode::UnknownProposal,
+            operation_id,
+            Details {
+                proposal_id: Some(proposal_id),
+                ..Details::default()
+            },
+        )
+    }
+
+    /// Identifier generation returned a proposal identifier the session already holds.
+    ///
+    /// The session refuses the whole batch rather than overwriting the proposal it already
+    /// owns, because overwriting would silently replace the canonical content behind an
+    /// identifier a caller may already be holding.
+    #[must_use]
+    pub fn duplicate_proposal_id(
+        operation_id: Option<OperationId>,
+        proposal_id: ProposalId,
+    ) -> Self {
+        Self::new(
+            ErrorCode::DuplicateProposalId,
             operation_id,
             Details {
                 proposal_id: Some(proposal_id),

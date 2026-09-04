@@ -4,8 +4,9 @@
 name: Rust CI
 
 on:
+  # Every pull request, whatever it targets. A change stacked on another branch has to
+  # prove itself before that branch merges, not after.
   pull_request:
-    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:
@@ -30,6 +31,21 @@ jobs:
         run: cargo test --locked --workspace --all-features
       - name: Architecture dependency boundary
         run: python3 scripts/check_architecture.py
+
+  # A product compiles these crates into its own browser artifact, so losing the target is
+  # its blocker, not ours — and it would surface only when that product next tried to build.
+  browser-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup target add wasm32-unknown-unknown
+      - name: Bootstrap lockfile
+        run: test -f Cargo.lock || cargo generate-lockfile
+      - name: Build for wasm32-unknown-unknown
+        run: >
+          cargo build --locked --target wasm32-unknown-unknown
+          -p aiai-contracts -p aiai-runtime -p aiai-signal
 
   dependency-policy:
     runs-on: ubuntu-latest

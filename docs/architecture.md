@@ -84,6 +84,13 @@ leaving activity never silently resumes mid-flight work. Going dormant does not 
 completion, cancellation, or rollback for anything still pending — a dormant session simply
 decides nothing.
 
+A product usually owns a mode enumeration rather than a set of edges — one mode per state.
+`RuntimeSession::ensure_activation` takes the target state, which makes re-applying the
+current mode a no-op instead of an undefined transition. It resolves only single defined
+steps: reaching `Active` from `Quiescing` is refused there too, because settling is the
+owner's assertion that in-flight work reached its boundary and the session will not make
+that assertion on the owner's behalf.
+
 ### A proposal is not an action
 
 ```text
@@ -92,21 +99,68 @@ wake -> propose -> admit -> dispatch
 
 Each arrow is gated, and the third one is a type boundary rather than a convention:
 
-1. `propose` requires an active session and returns `ProposalEnvelope` values. Inference
-   output is a candidate. Nothing more.
-2. `admit` submits one proposal to the `Authority` port. The proposal must have originated
-   in this session, the port must return `Admit`, and the granted capability must fall
-   inside the session's `DelegationScope`. The result is an `Admitted` value whose
-   constructor is crate-private — a caller outside this crate cannot build one.
+1. `propose` requires an active session. Inference output is a candidate, nothing more. The
+   session keeps the canonical `ProposalEnvelope` values and returns only their
+   `ProposalId`s; `pending_proposal` lends an original for rendering or serialization.
+   Computation that cannot be a synchronous port — a model behind an async or
+   foreign-language boundary — hands its candidates to `propose_candidates`, which mints
+   and owns them identically. Neither path lets a caller supply a `proposal_id`,
+   `sequence`, `operation_id`, or `contract_version`.
+2. `admit` takes a `ProposalId` — not an envelope — and resolves the proposal it decides
+   from session-owned state. The port must return `Admit`, and the granted capability must
+   fall inside the session's `DelegationScope`. The result is an `Admitted` value whose
+   constructor is crate-private, so a caller outside this crate cannot build one.
 3. `dispatch` accepts `Admitted` and nothing else. There is no function anywhere that takes
    a `ProposalEnvelope` and returns an `EffectRequestEnvelope`.
+
+Provenance follows from ownership rather than from comparing fields a caller supplied. Since
+no method accepts proposal content after the proposal exists, a legitimate `ProposalId`
+cannot be widened into authority for a different payload, sequence, operation, or contract
+version: there is no input through which substituted content could arrive. An identifier the
+session does not hold is `UnknownProposal`, and the authority port is never consulted about
+it.
 
 `Admitted` is neither `Clone` nor `Copy`, and `dispatch` consumes it, so one admission
 dispatches at most once.
 
+`propose` is transactional. It stages the whole batch — identifiers, sequences, envelopes —
+and commits only once every fallible step has succeeded. An `Err` from `propose` therefore
+leaves no pending entry, no sequence advance, and no revision advance, so a failed round
+cannot leave a proposal the caller never received. A repeated identifier from the
+identifier-generation port is refused as `DuplicateProposalId` rather than overwriting a
+proposal the session already owns.
+
+A pending proposal is released only on a terminal authority decision — admitted, withheld,
+or granted outside scope. An unavailable authority port is not a decision: the proposal
+stays pending so the same decision can be sought again.
+
 `DelegationScope::narrow` returns a subset or an error. Authority cannot widen through
 repeated delegation, and no sequence of narrowing calls recovers a capability that an
 earlier step dropped.
+
+### A subject outlives the process serving it
+
+`SubjectBinding` makes computation replaceable within one run. `SessionSnapshot` makes it
+replaceable across runs: `snapshot` captures the durable half of a session — identity,
+binding, scope, activation, counters, and the proposals still awaiting a decision — and
+`restore` seats a session on it. A restored session may be served by a different clock,
+identifier source, computation, or authority, because ports are supplied per call and are
+not part of what a session is.
+
+Two things are deliberately absent. An `Admitted` value in flight is not session state: it
+is permission a caller was granted and then held, and a restart is evidence neither that the
+attempt happened nor that it did not, so the product seeks the decision again rather than
+resuming a permission whose outcome nobody observed. The ports themselves are absent for the
+same reason they are parameters everywhere else.
+
+`restore` refuses a snapshot from a compatibility line this build does not implement, one
+carrying the same proposal identifier twice, and one whose sequence counter sits below a
+proposal it already emitted — each would seat a session that contradicts itself. It cannot
+verify that the bytes are the ones this session wrote. Storage is the product's trust
+boundary, and the honest statement is that a product able to rewrite its own snapshots can
+seat pending proposals of its choosing, exactly as it could by calling `propose` with
+computation of its choosing. Neither route reaches the authority boundary: a restored
+proposal becomes an action only through an `Authority` decision inside the restored scope.
 
 ## Failure is an outcome, not a gap
 
@@ -174,6 +228,7 @@ enforces that, plus NFC strings and ASCII object member names.
 
 ## Related
 
+- [Consuming the foundation](consuming.md) — how a product repository depends on these crates
 - [Browser-local inference](browser-local-inference.md) — concrete WebGPU/WebLLM adapter
 - [Integrating a product AI runtime](nilx-one-ai-integration.md) — how a product repository
   composes these crates, worked through `nilx-one/ai`.
