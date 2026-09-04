@@ -317,6 +317,33 @@
     "sequence_exhausted",
     "signal_schema_violation"
   ],
+  "failure_classification": {
+    "kinds": [
+      "unavailable",
+      "withheld",
+      "gated",
+      "rejected",
+      "exhausted"
+    ],
+    "retryable_kinds": [
+      "unavailable"
+    ],
+    "by_code": {
+      "malformed_envelope": "rejected",
+      "unsupported_contract_version": "rejected",
+      "unknown_variant": "rejected",
+      "missing_context": "unavailable",
+      "runtime_inactive": "gated",
+      "inference_unavailable": "unavailable",
+      "subject_continuity_violation": "rejected",
+      "unknown_proposal": "rejected",
+      "duplicate_proposal_id": "rejected",
+      "authority_withheld": "withheld",
+      "authority_scope_exceeded": "withheld",
+      "sequence_exhausted": "exhausted",
+      "signal_schema_violation": "rejected"
+    }
+  },
   "context_ports": [
     "clock",
     "identifier_generation",
@@ -465,6 +492,12 @@
       "{\"ok\":{\"contract_version\":\"0.2.0\",\"effect_requests\":[],\"operation_id\":\"op_0123456789abcdef0123456789abcdef\",\"proposals\":[],\"session_revision\":\"0\"}}",
       "{\"error\":{\"code\":\"runtime_inactive\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"}}",
       "{\"error\":{\"code\":\"authority_withheld\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\"}}}"
+    ],
+    "failure_records": [
+      "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"inference_unavailable\",\"operation_id\":\"op_0123456789abcdef0123456789abcdef\"},\"recorded_at_unix_ms\":\"1764547200000\"}",
+      "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"authority_withheld\",\"details\":{\"proposal_id\":\"prp_0123456789abcdef0123456789abcdef\",\"requested_capability\":\"message\"}},\"recorded_at_unix_ms\":\"1764547200001\",\"session_id\":\"ses_0123456789abcdef0123456789abcdef\"}",
+      "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"runtime_inactive\"},\"recorded_at_unix_ms\":\"0\",\"session_id\":\"ses_0123456789abcdef0123456789abcdef\"}",
+      "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"sequence_exhausted\"},\"recorded_at_unix_ms\":\"18446744073709551615\"}"
     ]
   },
   "invalid_documents": [
@@ -581,6 +614,31 @@
     {
       "shape": "turn_outcome",
       "document": "{\"error\":{\"code\":\"no_such_code\"}}",
+      "carries": "a code outside the closed taxonomy"
+    },
+    {
+      "shape": "failure_record",
+      "document": "{\"contract_version\":\"0.2.0\",\"recorded_at_unix_ms\":\"1\"}",
+      "carries": "no error member"
+    },
+    {
+      "shape": "failure_record",
+      "document": "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"runtime_inactive\"}}",
+      "carries": "no recorded_at_unix_ms member"
+    },
+    {
+      "shape": "failure_record",
+      "document": "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"runtime_inactive\"},\"recorded_at_unix_ms\":\"1\",\"subject_id\":\"sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "carries": "a subject identifier this record does not define"
+    },
+    {
+      "shape": "failure_record",
+      "document": "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"runtime_inactive\"},\"recorded_at_unix_ms\":\"1\",\"session_id\":\"op_0123456789abcdef0123456789abcdef\"}",
+      "carries": "a session member holding another identifier kind"
+    },
+    {
+      "shape": "failure_record",
+      "document": "{\"contract_version\":\"0.2.0\",\"error\":{\"code\":\"no_such_code\"},\"recorded_at_unix_ms\":\"1\"}",
       "carries": "a code outside the closed taxonomy"
     }
   ],

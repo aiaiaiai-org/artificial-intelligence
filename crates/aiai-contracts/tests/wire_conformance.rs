@@ -15,9 +15,9 @@
 
 use aiai_contracts::{
     AdmissionEnvelope, CapabilityName, ContextPort, ContractVersion, ControllerId, DecimalU64,
-    EffectRequestEnvelope, ErrorCode, FoundationError, ModelId, OperationId, ProposalEnvelope,
-    ProposalId, RuntimeId, SchemaViolation, SessionId, Sha256Digest, SubjectId, TurnOutcome,
-    VariantKind, WakeEnvelope, canonical_json, require_compatible_contract,
+    EffectRequestEnvelope, ErrorCode, FailureKind, FailureRecord, FoundationError, ModelId,
+    OperationId, ProposalEnvelope, ProposalId, RuntimeId, SchemaViolation, SessionId, Sha256Digest,
+    SubjectId, TurnOutcome, VariantKind, WakeEnvelope, canonical_json, require_compatible_contract,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -292,6 +292,17 @@ fn violation_token(violation: SchemaViolation) -> &'static str {
     }
 }
 
+/// Every kind, spelled once, for the same reason as every other closed vocabulary here.
+fn failure_kind_token(kind: FailureKind) -> &'static str {
+    match kind {
+        FailureKind::Unavailable => "unavailable",
+        FailureKind::Withheld => "withheld",
+        FailureKind::Gated => "gated",
+        FailureKind::Rejected => "rejected",
+        FailureKind::Exhausted => "exhausted",
+    }
+}
+
 fn wire_token<T: Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .expect("a closed vocabulary serializes")
@@ -300,10 +311,8 @@ fn wire_token<T: Serialize>(value: &T) -> String {
         .to_owned()
 }
 
-#[test]
-fn error_codes_are_spelled_the_same_on_both_sides() {
-    let root = corpus();
-    let codes = [
+const fn all_codes() -> [ErrorCode; 13] {
+    [
         ErrorCode::MalformedEnvelope,
         ErrorCode::UnsupportedContractVersion,
         ErrorCode::UnknownVariant,
@@ -317,7 +326,13 @@ fn error_codes_are_spelled_the_same_on_both_sides() {
         ErrorCode::AuthorityScopeExceeded,
         ErrorCode::SequenceExhausted,
         ErrorCode::SignalSchemaViolation,
-    ];
+    ]
+}
+
+#[test]
+fn error_codes_are_spelled_the_same_on_both_sides() {
+    let root = corpus();
+    let codes = all_codes();
     let expected = strings(&root, "error_codes");
     assert_eq!(codes.len(), expected.len());
     for (code, token) in codes.into_iter().zip(expected) {
@@ -374,6 +389,48 @@ fn port_variant_and_violation_vocabularies_are_spelled_the_same_on_both_sides() 
         assert_eq!(violation_token(violation), token);
         assert_eq!(violation.as_str(), token);
         assert_eq!(wire_token(&violation), token);
+    }
+}
+
+#[test]
+fn every_code_is_classified_exactly_as_the_corpus_says() {
+    let root = corpus();
+    let kinds = [
+        FailureKind::Unavailable,
+        FailureKind::Withheld,
+        FailureKind::Gated,
+        FailureKind::Rejected,
+        FailureKind::Exhausted,
+    ];
+    let declared = strings(&root, "failure_classification.kinds");
+    assert_eq!(kinds.len(), declared.len());
+    for (kind, token) in kinds.into_iter().zip(declared) {
+        assert_eq!(failure_kind_token(kind), token);
+        assert_eq!(kind.as_str(), token);
+        assert_eq!(wire_token(&kind), token);
+    }
+
+    let retryable = strings(&root, "failure_classification.retryable_kinds");
+    let by_code = section(&root, "failure_classification.by_code")
+        .as_object()
+        .expect("the corpus classifies every code");
+    let codes = strings(&root, "error_codes");
+    assert_eq!(by_code.len(), codes.len(), "every code is classified");
+
+    for code in all_codes() {
+        let token = code.as_str();
+        let expected = by_code
+            .get(token)
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("the corpus classifies {token}"));
+        assert_eq!(failure_kind_token(code.kind()), expected, "{token}");
+        // Retryability is derived from the kind rather than listed per code, so the corpus
+        // cannot record a code that is retryable while its kind is not.
+        assert_eq!(
+            code.is_retryable(),
+            retryable.iter().any(|kind| kind == expected),
+            "{token}"
+        );
     }
 }
 
@@ -458,6 +515,9 @@ fn every_document_in_the_corpus_survives_a_decode_and_re_encode_unchanged() {
             "{document}"
         );
     }
+    for document in strings(&root, "documents.failure_records") {
+        assert!(round_trips::<FailureRecord>(&document), "{document}");
+    }
 }
 
 fn decodes(shape: &str, document: &str) -> bool {
@@ -476,6 +536,7 @@ fn decodes(shape: &str, document: &str) -> bool {
         "turn_outcome" => {
             serde_json::from_str::<TurnOutcome<SamplePayload, SamplePayload>>(document).is_ok()
         }
+        "failure_record" => serde_json::from_str::<FailureRecord>(document).is_ok(),
         other => panic!("the corpus names an unknown shape: {other}"),
     }
 }

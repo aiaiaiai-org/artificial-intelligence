@@ -20,9 +20,12 @@ mod version;
 pub use canonical::{CanonicalJsonError, canonical_json};
 pub use capability::{CAPABILITY_NAME_MAX_LEN, CapabilityName, CapabilityNameError};
 pub use envelope::{
-    AdmissionEnvelope, EffectRequestEnvelope, ProposalEnvelope, TurnOk, TurnOutcome, WakeEnvelope,
+    AdmissionEnvelope, EffectRequestEnvelope, FailureRecord, ProposalEnvelope, TurnOk, TurnOutcome,
+    WakeEnvelope,
 };
-pub use error::{ContextPort, Details, ErrorCode, FoundationError, SchemaViolation, VariantKind};
+pub use error::{
+    ContextPort, Details, ErrorCode, FailureKind, FoundationError, SchemaViolation, VariantKind,
+};
 pub use identifier::{
     ControllerId, IdentifierError, ModelId, OperationId, ProposalId, RuntimeId, SessionId,
     Sha256Digest, SubjectId,

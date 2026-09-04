@@ -68,6 +68,64 @@ export const SCHEMA_VIOLATIONS = [
 export type SchemaViolation = (typeof SCHEMA_VIOLATIONS)[number];
 
 /**
+ * What kind of failure a code names, for a host routing one somewhere.
+ *
+ * A failure usually has to reach two places at once: a durable record an operator reads
+ * later, and a person waiting on the operation. Deciding which failures deserve which
+ * treatment means classifying all thirteen codes, and every consumer that did it separately
+ * would classify them slightly differently.
+ *
+ * This says what happened. It deliberately does not say what to show, how loudly, or in
+ * which language — those follow from a product's own contract with the person reading it.
+ */
+export const FAILURE_KINDS = [
+  "unavailable",
+  "withheld",
+  "gated",
+  "rejected",
+  "exhausted",
+] as const;
+
+export type FailureKind = (typeof FAILURE_KINDS)[number];
+
+const FAILURE_KIND_BY_CODE: Readonly<Record<ErrorCode, FailureKind>> = {
+  // `missing_context` is `unavailable` rather than a caller mistake: the kernel reports
+  // every port failure through it, so it is what an unreachable clock, identifier source or
+  // authority looks like from outside, and `details.port` says which one could not answer.
+  missing_context: "unavailable",
+  inference_unavailable: "unavailable",
+  authority_withheld: "withheld",
+  authority_scope_exceeded: "withheld",
+  runtime_inactive: "gated",
+  sequence_exhausted: "exhausted",
+  malformed_envelope: "rejected",
+  unsupported_contract_version: "rejected",
+  unknown_variant: "rejected",
+  subject_continuity_violation: "rejected",
+  unknown_proposal: "rejected",
+  duplicate_proposal_id: "rejected",
+  signal_schema_violation: "rejected",
+};
+
+/** Returns what kind of failure a code names. */
+export function failureKind(code: ErrorCode): FailureKind {
+  return FAILURE_KIND_BY_CODE[code];
+}
+
+/**
+ * Returns whether the same operation, unchanged, may succeed if attempted again.
+ *
+ * Only an unavailable port qualifies. A withheld admission is a decision, and repeating it
+ * asks the same question of the same authority; a rejected input is rejected on every
+ * attempt. `duplicate_proposal_id` is deliberately not retryable even though a fresh
+ * identifier would succeed — that is a different call, made after replacing an identifier
+ * source that returned a value the session already held.
+ */
+export function isRetryable(code: ErrorCode): boolean {
+  return failureKind(code) === "unavailable";
+}
+
+/**
  * Closed, code-specific failure details.
  *
  * Member names are the wire names. A host that renamed them to a local spelling would be
