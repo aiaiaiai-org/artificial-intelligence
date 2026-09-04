@@ -63,7 +63,7 @@ fn validate(value: &Value) -> Result<(), CanonicalJsonError> {
 
 /// Serializes a typed contract value into deterministic canonical JSON bytes.
 ///
-/// Contract `0.1.0` forbids JSON numbers and defines only ASCII object member names.
+/// Contract `0.2.0` forbids JSON numbers and defines only ASCII object member names.
 /// Under those constraints `serde_json`'s ordered map representation already yields the
 /// member ordering the contract's RFC 8785 profile requires.
 ///

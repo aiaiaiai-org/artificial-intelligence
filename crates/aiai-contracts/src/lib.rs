@@ -3,7 +3,7 @@
 
 //! Binding-safe contract boundary for the aiaiaiai AI foundation.
 //!
-//! This crate represents the `0.1.0` foundation contract: canonical identifiers, integer
+//! This crate represents the `0.2.0` foundation contract: canonical identifiers, integer
 //! strings, closed generic envelopes, and a deterministic failure taxonomy. It defines no
 //! product semantics — no participant model, no relationship type, no interaction registry
 //! — so a product repository can bind its own vocabulary to these shapes without the
@@ -31,7 +31,7 @@ pub use scalar::{DecimalU64, DecimalU64Error};
 pub use version::{ContractVersion, VersionError};
 
 /// Normative foundation contract version implemented by this workspace.
-pub const CONTRACT_VERSION: &str = "0.1.0";
+pub const CONTRACT_VERSION: &str = "0.2.0";
 
 /// Validates directional contract compatibility before a payload is decoded.
 ///
@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn rejects_another_compatibility_line() {
-        let error = require_compatible_contract("0.2.0", None).expect_err("0.2 is incompatible");
+        let error = require_compatible_contract("0.3.0", None).expect_err("0.3 is another line");
         assert_eq!(error.code(), ErrorCode::UnsupportedContractVersion);
     }
 

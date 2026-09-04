@@ -1,16 +1,40 @@
 // © 2026 aiaiaiai · aiaiaiai.org
 // SPDX-License-Identifier: Apache-2.0
 
-use aiai_contracts::{CapabilityName, DecimalU64, ProposalEnvelope, ProposalId};
+use aiai_contracts::{CapabilityName, ContextPort, DecimalU64, ProposalEnvelope, ProposalId};
+use core::fmt;
 
 /// Explicit nondeterministic or external boundary the kernel refuses to read implicitly.
+///
+/// Every variant names a port some method of [`RuntimeSession`](crate::RuntimeSession)
+/// takes as a parameter. A boundary the kernel never actually reads does not belong here:
+/// a port a product can implement but never hand to anything is a claim about the kernel
+/// that the kernel does not keep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PortKind {
     Clock,
-    Entropy,
     IdentifierGeneration,
     Inference,
     Authority,
+}
+
+impl PortKind {
+    /// Returns the contract-level name of this port.
+    #[must_use]
+    pub const fn context_port(self) -> ContextPort {
+        match self {
+            Self::Clock => ContextPort::Clock,
+            Self::IdentifierGeneration => ContextPort::IdentifierGeneration,
+            Self::Inference => ContextPort::Inference,
+            Self::Authority => ContextPort::Authority,
+        }
+    }
+}
+
+impl fmt::Display for PortKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.context_port().as_str())
+    }
 }
 
 /// Observable absence or failure of an external port.
@@ -22,6 +46,22 @@ pub struct PortError {
     pub port: PortKind,
 }
 
+impl PortError {
+    /// Reports that `port` could not answer.
+    #[must_use]
+    pub const fn new(port: PortKind) -> Self {
+        Self { port }
+    }
+}
+
+impl fmt::Display for PortError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "the {} port is unavailable", self.port)
+    }
+}
+
+impl std::error::Error for PortError {}
+
 /// Supplies time; the kernel never reads a wall clock directly.
 pub trait Clock {
     /// Returns an explicit millisecond value.
@@ -30,16 +70,6 @@ pub trait Clock {
     ///
     /// Returns [`PortError`] when the caller did not supply clock context.
     fn now_unix_ms(&self) -> Result<DecimalU64, PortError>;
-}
-
-/// Supplies explicit entropy; the kernel never reads ambient randomness directly.
-pub trait Entropy {
-    /// Returns exactly the requested explicit entropy bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PortError`] when entropy is unavailable at the boundary.
-    fn bytes(&mut self, length: usize) -> Result<Vec<u8>, PortError>;
 }
 
 /// Supplies canonical proposal identifiers without granting authority.
@@ -110,4 +140,31 @@ pub trait Authority {
         &self,
         proposal: &ProposalEnvelope<Self::Proposal>,
     ) -> Result<AuthorityDecision, PortError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PortError, PortKind};
+    use aiai_contracts::ContextPort;
+
+    #[test]
+    fn every_port_names_its_contract_level_port() {
+        assert_eq!(PortKind::Clock.context_port(), ContextPort::Clock);
+        assert_eq!(
+            PortKind::IdentifierGeneration.context_port(),
+            ContextPort::IdentifierGeneration
+        );
+        assert_eq!(PortKind::Inference.context_port(), ContextPort::Inference);
+        assert_eq!(PortKind::Authority.context_port(), ContextPort::Authority);
+    }
+
+    #[test]
+    fn a_port_failure_is_an_error_value_a_product_can_carry() {
+        let failure = PortError::new(PortKind::Inference);
+        assert_eq!(failure.to_string(), "the inference port is unavailable");
+
+        // It composes with whatever error handling the product already has.
+        let boxed: Box<dyn std::error::Error> = Box::new(failure);
+        assert_eq!(boxed.to_string(), "the inference port is unavailable");
+    }
 }

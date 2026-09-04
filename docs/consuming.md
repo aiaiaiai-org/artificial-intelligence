@@ -12,7 +12,7 @@ contract from the consumer's side.
 aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
 
 # From the first tagged release onward:
-# aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.1.0" }
+# aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.2.0" }
 ```
 
 `aiai-runtime` re-exports the contract crate, so a product does not add a second dependency
@@ -41,9 +41,15 @@ build that passed yesterday is not the build that runs today.
 is verified; a consumer resolving this workspace as a git dependency still does its own
 resolution and is unaffected by it.
 
-`0.1.0` is a compatibility line, not a stability promise. `aiai_contracts::CONTRACT_VERSION`
+`0.2.0` is a compatibility line, not a stability promise. `aiai_contracts::CONTRACT_VERSION`
 is the normative wire version, and `require_compatible_contract` checks a peer's claim
 before a payload is decoded.
+
+The line moves whenever a closed wire vocabulary changes — an `ErrorCode`, a `ContextPort`,
+a `SchemaViolation` variant added or removed. `accepts_provider` treats a pre-`1.0` line as
+compatible across every patch of the same minor, so a build that changed a vocabulary while
+keeping its minor would pass the handshake and then fail to decode the payload. `0.1.0` and
+`0.2.0` are therefore mutually incompatible by construction, and a test asserts it.
 
 ### Browser and other targets
 
@@ -65,16 +71,26 @@ in whatever the product distributes.
 
 ## What the product implements
 
-The kernel reads no wall clock, no ambient randomness, and no ambient configuration.
-Everything nondeterministic or external arrives through a port the product supplies:
+The kernel reads no wall clock, no ambient randomness, and no ambient configuration. Time,
+identifiers, and authority reach it only through a port the product supplies, and every port
+below is a parameter of some session method — there is nothing to implement that has nowhere
+to go. Computation is the one that also has a second entrance, described under
+[Computation that cannot be a synchronous port](#computation-that-cannot-be-a-synchronous-port):
 
 | Port | The product provides | Returning `Err` means |
 |---|---|---|
 | `Clock` | the time source of record | no timestamp is substituted |
-| `Entropy` | explicit random bytes | no ambient randomness is read |
 | `IdentifierGeneration` | canonical `ProposalId`s | no identifier is invented |
 | `Inference` | computation, local or remote | no empty or invented success |
 | `Authority` | the boundary that permits an attempt | unavailable is never approval |
+
+`PortError` says which boundary could not answer. It implements `Display` and
+`std::error::Error`, so it can be printed, boxed as `Box<dyn Error>`, carried by an
+`anyhow`-style error, and returned as a `source`. A product's own error enum still needs
+`From<PortError>` — `?` converts through that impl and nothing else — but that is a wrapper
+variant rather than a newtype that has to re-implement the traits first.
+`PortError::new(PortKind::Inference)` is the whole construction. The same holds for
+`aiai-signal`'s `TransformRejection`.
 
 Two generic parameters carry the product's meaning through the foundation without the
 foundation learning it: `Inference::Request` and `Inference::Proposal`. Wake reasons are
