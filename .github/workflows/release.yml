@@ -77,26 +77,31 @@ jobs:
           with open(sys.argv[2], encoding="utf-8") as source:
               runs = json.load(source)["workflow_runs"]
 
-          required = {"Rust CI", "Web adapter CI", "Repository policy"}
+          required = {
+              ".github/workflows/rust.yml": "Rust CI",
+              ".github/workflows/web.yml": "Web adapter CI",
+              ".github/workflows/repository-policy.yml": "Repository policy",
+          }
           latest = {}
           for run in runs:
-              name = run.get("name")
-              if name not in required:
+              path = run.get("path")
+              expected_name = required.get(path)
+              if expected_name is None or run.get("name") != expected_name:
                   continue
-              current = latest.get(name)
+              current = latest.get(path)
               if current is None or run["id"] > current["id"]:
-                  latest[name] = run
+                  latest[path] = run
 
-          missing = sorted(required - latest.keys())
+          missing = sorted(path for path in required if path not in latest)
           failed = sorted(
-              name
-              for name, run in latest.items()
+              path
+              for path, run in latest.items()
               if run.get("status") != "completed" or run.get("conclusion") != "success"
           )
           if missing or failed:
               parts = []
               if missing:
-                  parts.append(f"missing: {', '.join(missing)}")
+                  parts.append(f"missing canonical workflows: {', '.join(missing)}")
               if failed:
                   parts.append(f"not green: {', '.join(failed)}")
               print(f"::error::PR head {head} is not fully verified ({'; '.join(parts)})")
