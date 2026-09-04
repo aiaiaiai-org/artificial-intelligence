@@ -1,0 +1,166 @@
+# © 2026 aiaiaiai · aiaiaiai.org
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release
+
+# A release is cut from a tag and from nothing else. Publishing what a moving branch
+# happened to hold would hand consumers a version they cannot get back to.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      publish_npm: ${{ steps.registries.outputs.npm }}
+      publish_github_packages: ${{ steps.registries.outputs.github_packages }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: A release is a tag
+        if: github.ref_type != 'tag'
+        run: |
+          # Read the ref from the environment rather than interpolating it into the script.
+          echo "::error::${GITHUB_REF} is not a tag; a release is cut from a tag"
+          exit 1
+
+      - name: The tag names the workspace version
+        id: tag
+        run: |
+          set -euo pipefail
+          tagged="${GITHUB_REF_NAME#v}"
+          declared="$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version'])")"
+          if [ "${tagged}" != "${declared}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not name the workspace version ${declared}"
+            exit 1
+          fi
+          echo "version=${tagged}" >> "${GITHUB_OUTPUT}"
+
+      - name: Which registries this release can reach
+        id: registries
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publish_npm=false
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            publish_npm=true
+          else
+            echo "::notice::NPM_TOKEN is not configured; public npm is unavailable"
+          fi
+          echo "npm=${publish_npm}" >> "${GITHUB_OUTPUT}"
+
+          # GitHub Packages resolves an npm scope to the repository owner, so it can only
+          # accept packages named @<owner>/*. Ours are @aiaiaiai/* and the owner is
+          # aiaiaiai-org, so this is a naming decision rather than a missing credential.
+          owner="${GITHUB_REPOSITORY%%/*}"
+          scope="$(npm pkg get name --workspaces --json | node -e '
+            const packages = JSON.parse(require("node:fs").readFileSync(0, "utf-8"));
+            const scopes = new Set(Object.values(packages).map((name) => name.split("/")[0]));
+            process.stdout.write([...scopes].join(","));
+          ')"
+
+          publish_github_packages=false
+          if [ "${scope}" = "@${owner}" ]; then
+            publish_github_packages=true
+          else
+            echo "::notice::packages are scoped ${scope} and the repository owner is ${owner}; GitHub Packages accepts only @${owner}/*"
+          fi
+          echo "github_packages=${publish_github_packages}" >> "${GITHUB_OUTPUT}"
+
+          # A green release that publishes no installable package is a false success.
+          if [ "${publish_npm}" != true ] && [ "${publish_github_packages}" != true ]; then
+            echo "::error::no npm registry is reachable; configure NPM_TOKEN or align the package scope with the repository owner before cutting a release"
+            exit 1
+          fi
+
+  # Nothing is published that was not verified at the exact commit the tag names.
+  verify:
+    runs-on: ubuntu-latest
+    needs: guard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --locked --workspace --all-features
+      - name: Architecture dependency boundary
+        run: python3 scripts/check_architecture.py
+      - name: Repository policy
+        run: python3 scripts/check_repository_policy.py Apache-2.0
+
+      - run: npm ci
+      - run: npm run typecheck:web
+      - run: npm run test:web
+      - run: npm run build:web
+
+      # A product compiles these crates into its own browser artifact, and the dependency
+      # policy is a licensing and advisory gate. Both run on every pull request; a release
+      # runs them again so "verified at this commit" covers everything CI covers.
+      - name: Browser target
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --locked --target wasm32-unknown-unknown \
+            -p aiai-contracts -p aiai-runtime -p aiai-signal
+
+  verify-dependency-policy:
+    runs-on: ubuntu-latest
+    needs: guard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    needs: [guard, verify, verify-dependency-policy]
+    if: needs.guard.outputs.publish_npm == 'true'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: ./scripts/publish_packages.sh https://registry.npmjs.org
+
+  publish-github-packages:
+    runs-on: ubuntu-latest
+    needs: [guard, verify, verify-dependency-policy]
+    if: needs.guard.outputs.publish_github_packages == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+      - run: npm ci
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/publish_packages.sh https://npm.pkg.github.com

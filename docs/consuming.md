@@ -8,11 +8,10 @@ contract from the consumer's side.
 
 ```toml
 [dependencies]
-# No release is tagged yet, so pin a revision reachable from master.
-aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
+aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.2.0" }
 
-# From the first tagged release onward:
-# aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.2.0" }
+# Before that tag exists, pin a revision reachable from master instead:
+# aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
 ```
 
 `aiai-runtime` re-exports the contract crate, so a product does not add a second dependency
@@ -29,10 +28,13 @@ and is never required in order to run a session.
 
 ### Pinning
 
-Pin a tag once one exists. No release is tagged yet, so pin a `rev` — and pin one reachable
-from `master`: a revision that only ever existed on a feature branch is orphaned when that
-branch is squash-merged or deleted, and every consumer pinned to it stops resolving. For the
-same reason foundation pull requests that consumers already pin are merged, not squashed.
+Pin a tag. A tag is a state of `master` that a release verified end to end before anything
+was published, and [Releasing](releasing.md) is how one is cut.
+
+Before the first tag exists, pin a `rev` — and pin one reachable from `master`: a revision
+that only ever existed on a feature branch is orphaned when that branch is squash-merged or
+deleted, and every consumer pinned to it stops resolving. For the same reason foundation
+pull requests that consumers already pin are merged, not squashed.
 
 Pinning a branch instead of a tag or revision is not a substitute. A branch moves, so the
 build that passed yesterday is not the build that runs today.
@@ -69,9 +71,12 @@ A product runtime is Rust; the client that renders a turn usually is not. `@aiai
 is that side of the same contract — a zero-dependency TypeScript package that decodes what
 the kernel emits and refuses what the kernel would refuse:
 
-```json
-{ "dependencies": { "@aiaiaiai/contracts": "0.2.0" } }
+```sh
+npm install @aiaiaiai/contracts
 ```
+
+Until the first release is published this resolves to nothing; see
+[Releasing](releasing.md).
 
 It is not a session and holds no authority. A host decodes a `TurnOutcome`, renders the
 proposals it names, and sends a decision back to the runtime that owns them. See
@@ -264,6 +269,7 @@ that: it returns text, the product wraps it as a proposal payload, and
 ## Related
 
 - [Foundation architecture](architecture.md)
+- [Releasing, and what a consumer pins](releasing.md)
 - [The host side of the contract](host-contract.md)
 - [Integrating a product AI runtime](nilx-one-ai-integration.md)
 - [Browser-local inference](browser-local-inference.md)

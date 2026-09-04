@@ -1,0 +1,18 @@
+@aiaiaiai/webllm
+© 2026 aiaiaiai · aiaiaiai.org
+
+Licensed under the Apache License, Version 2.0.
+See LICENSE for the complete license terms.
+
+Runtime dependencies:
+
+- WebLLM, © MLC contributors, Apache License 2.0
+- loglevel, © Tim Perry, MIT License
+
+Optional model downloaded by the browser at runtime:
+
+- Qwen3-0.6B, © Qwen Team, Apache License 2.0
+
+This package is published from
+https://github.com/aiaiaiai-org/artificial-intelligence, where the repository
+NOTICE covers the workspace as a whole.

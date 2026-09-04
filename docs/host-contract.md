@@ -48,6 +48,13 @@ implementations of one contract quietly stop agreeing.
 | `envelope` | the closed envelopes | wake, proposal, admission, effect request, and the turn report |
 | `activation` | `ActivationState` | the gate a client renders and requests modes against |
 
+```sh
+npm install @aiaiaiai/contracts
+```
+
+Until the first release is published this resolves to nothing; see
+[Releasing](releasing.md).
+
 The package version is the contract line it implements, so `@aiaiaiai/contracts@0.2.0`
 speaks `0.2.0` and nothing else. When the line moves — a closed vocabulary gains or loses a
 variant — the package moves with it, and `requireCompatibleContract` refuses a peer claiming
@@ -137,5 +144,6 @@ python3 scripts/check_architecture.py
 
 - [Foundation architecture](architecture.md)
 - [Consuming the foundation](consuming.md) — the Rust side of the same contract
+- [Releasing, and what a consumer pins](releasing.md)
 - [Browser-local inference](browser-local-inference.md) — the other host-side package
 - [Integrating a product AI runtime](nilx-one-ai-integration.md)
