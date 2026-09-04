@@ -51,11 +51,28 @@ impl ErrorCode {
 #[serde(rename_all = "snake_case")]
 pub enum ContextPort {
     Clock,
-    Entropy,
     IdentifierGeneration,
     Inference,
     Authority,
-    Activation,
+}
+
+impl ContextPort {
+    /// Returns the canonical wire token for this port.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Clock => "clock",
+            Self::IdentifierGeneration => "identifier_generation",
+            Self::Inference => "inference",
+            Self::Authority => "authority",
+        }
+    }
+}
+
+impl fmt::Display for ContextPort {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// Closed name of the contract surface whose variant was not recognized.
@@ -81,6 +98,30 @@ pub enum SchemaViolation {
     NonCanonicalEncoding,
     InvalidFieldCombination,
     SchemaVersionMismatch,
+}
+
+impl SchemaViolation {
+    /// Returns the canonical wire token for this violation.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UnknownArchetype => "unknown_archetype",
+            Self::UnknownField => "unknown_field",
+            Self::MissingField => "missing_field",
+            Self::ValueOutOfDomain => "value_out_of_domain",
+            Self::ExcessPrecision => "excess_precision",
+            Self::ExcessCardinality => "excess_cardinality",
+            Self::NonCanonicalEncoding => "non_canonical_encoding",
+            Self::InvalidFieldCombination => "invalid_field_combination",
+            Self::SchemaVersionMismatch => "schema_version_mismatch",
+        }
+    }
+}
+
+impl fmt::Display for SchemaViolation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// Closed, code-specific failure details. Absent members are omitted from the wire form.
@@ -352,6 +393,67 @@ impl std::error::Error for FoundationError {}
 mod tests {
     use super::{ContextPort, ErrorCode, FoundationError, SchemaViolation};
     use crate::canonical_json;
+
+    /// `as_str` is what a reader sees; serde is what a peer reads. One spelling, or a log
+    /// line and a payload disagree about the same value.
+    fn wire_token<T: serde::Serialize>(value: &T) -> String {
+        serde_json::to_string(value)
+            .expect("a closed token serializes")
+            .trim_matches('"')
+            .to_owned()
+    }
+
+    #[test]
+    fn every_error_code_reads_the_same_way_it_serializes() {
+        for code in [
+            ErrorCode::MalformedEnvelope,
+            ErrorCode::UnsupportedContractVersion,
+            ErrorCode::UnknownVariant,
+            ErrorCode::MissingContext,
+            ErrorCode::RuntimeInactive,
+            ErrorCode::InferenceUnavailable,
+            ErrorCode::SubjectContinuityViolation,
+            ErrorCode::UnknownProposal,
+            ErrorCode::DuplicateProposalId,
+            ErrorCode::AuthorityWithheld,
+            ErrorCode::AuthorityScopeExceeded,
+            ErrorCode::SequenceExhausted,
+            ErrorCode::SignalSchemaViolation,
+        ] {
+            assert_eq!(code.as_str(), wire_token(&code));
+        }
+    }
+
+    #[test]
+    fn every_context_port_reads_the_same_way_it_serializes() {
+        for port in [
+            ContextPort::Clock,
+            ContextPort::IdentifierGeneration,
+            ContextPort::Inference,
+            ContextPort::Authority,
+        ] {
+            assert_eq!(port.as_str(), wire_token(&port));
+            assert_eq!(port.to_string(), wire_token(&port));
+        }
+    }
+
+    #[test]
+    fn every_schema_violation_reads_the_same_way_it_serializes() {
+        for violation in [
+            SchemaViolation::UnknownArchetype,
+            SchemaViolation::UnknownField,
+            SchemaViolation::MissingField,
+            SchemaViolation::ValueOutOfDomain,
+            SchemaViolation::ExcessPrecision,
+            SchemaViolation::ExcessCardinality,
+            SchemaViolation::NonCanonicalEncoding,
+            SchemaViolation::InvalidFieldCombination,
+            SchemaViolation::SchemaVersionMismatch,
+        ] {
+            assert_eq!(violation.as_str(), wire_token(&violation));
+            assert_eq!(violation.to_string(), wire_token(&violation));
+        }
+    }
 
     #[test]
     fn omits_empty_details_from_the_wire_form() {

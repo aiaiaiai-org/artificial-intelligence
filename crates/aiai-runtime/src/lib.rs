@@ -17,9 +17,10 @@
 //! [`DelegationScope`], and only an [`Admitted`] value can become an effect request.
 //!
 //! The kernel reads no wall clock, no ambient randomness, and no ambient configuration:
-//! time, entropy, identifiers, computation, and authority all arrive through the explicit
-//! ports in [`ports`]. When a port is unavailable the outcome is a typed failure — never a
-//! substituted value and never an invented success.
+//! time, identifiers, computation, and authority all arrive through the explicit ports in
+//! [`ports`], and every one of them is a parameter of some method here. When a port is
+//! unavailable the outcome is a typed failure — never a substituted value and never an
+//! invented success.
 //!
 //! [`SessionSnapshot`] carries the durable half of a session across the process that
 //! served it, because a subject that only exists while one process is running is not a
@@ -47,8 +48,8 @@ pub use activation::{ActivationState, ActivationTransition, InvalidTransition};
 pub use admission::Admitted;
 pub use continuity::{ContinuityChange, ContinuityRelation, SubjectBinding};
 pub use ports::{
-    Authority, AuthorityDecision, Candidate, Clock, Entropy, IdentifierGeneration, Inference,
-    PortError, PortKind,
+    Authority, AuthorityDecision, Candidate, Clock, IdentifierGeneration, Inference, PortError,
+    PortKind,
 };
 pub use scope::{DelegationScope, ScopeExpansion};
 pub use session::RuntimeSession;
@@ -67,9 +68,9 @@ pub use snapshot::SessionSnapshot;
 pub mod prelude {
     pub use crate::{
         ActivationState, ActivationTransition, Admitted, Authority, AuthorityDecision, Candidate,
-        Clock, ContinuityChange, ContinuityRelation, DelegationScope, Entropy,
-        IdentifierGeneration, Inference, InvalidTransition, PortError, PortKind, RuntimeSession,
-        ScopeExpansion, SessionSnapshot, SubjectBinding,
+        Clock, ContinuityChange, ContinuityRelation, DelegationScope, IdentifierGeneration,
+        Inference, InvalidTransition, PortError, PortKind, RuntimeSession, ScopeExpansion,
+        SessionSnapshot, SubjectBinding,
     };
     pub use aiai_contracts::{
         AdmissionEnvelope, CapabilityName, ContextPort, ContractVersion, ControllerId, DecimalU64,

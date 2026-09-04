@@ -4,24 +4,13 @@
 use crate::{
     ActivationState, ActivationTransition, Admitted, Authority, AuthorityDecision, Candidate,
     Clock, ContinuityRelation, DelegationScope, IdentifierGeneration, Inference, PortError,
-    PortKind, SessionSnapshot, SubjectBinding,
+    SessionSnapshot, SubjectBinding,
 };
 use aiai_contracts::{
-    AdmissionEnvelope, CONTRACT_VERSION, ContextPort, ContractVersion, DecimalU64,
-    EffectRequestEnvelope, FoundationError, OperationId, ProposalEnvelope, ProposalId, SessionId,
-    TurnOk, WakeEnvelope,
+    AdmissionEnvelope, CONTRACT_VERSION, ContractVersion, DecimalU64, EffectRequestEnvelope,
+    FoundationError, OperationId, ProposalEnvelope, ProposalId, SessionId, TurnOk, WakeEnvelope,
 };
 use std::collections::BTreeMap;
-
-const fn context_port(port: PortKind) -> ContextPort {
-    match port {
-        PortKind::Clock => ContextPort::Clock,
-        PortKind::Entropy => ContextPort::Entropy,
-        PortKind::IdentifierGeneration => ContextPort::IdentifierGeneration,
-        PortKind::Inference => ContextPort::Inference,
-        PortKind::Authority => ContextPort::Authority,
-    }
-}
 
 /// One bounded activation of a replaceable runtime on behalf of one durable subject.
 ///
@@ -655,7 +644,7 @@ impl<P> RuntimeSession<P> {
     }
 
     fn port_failure(operation_id: Option<OperationId>, error: PortError) -> FoundationError {
-        FoundationError::missing_context(operation_id, context_port(error.port))
+        FoundationError::missing_context(operation_id, error.port.context_port())
     }
 
     fn next_sequence(

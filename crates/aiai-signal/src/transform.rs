@@ -3,6 +3,7 @@
 
 use crate::{LocalObservation, SchemaRegistry, Token, TrainingSignal};
 use aiai_contracts::SchemaViolation;
+use core::fmt;
 use std::collections::BTreeMap;
 
 /// Why an observation could not become a signal.
@@ -11,6 +12,17 @@ pub struct TransformRejection {
     pub violation: SchemaViolation,
     pub field: Option<Token>,
 }
+
+impl fmt::Display for TransformRejection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.field {
+            Some(field) => write!(formatter, "{} at field {field}", self.violation),
+            None => write!(formatter, "{}", self.violation),
+        }
+    }
+}
+
+impl std::error::Error for TransformRejection {}
 
 impl TransformRejection {
     const fn archetype(violation: SchemaViolation) -> Self {
@@ -87,4 +99,33 @@ pub fn transform(
         archetype: schema.archetype.clone(),
         fields,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TransformRejection;
+    use crate::Token;
+    use aiai_contracts::SchemaViolation;
+
+    #[test]
+    fn a_rejection_says_what_was_wrong_and_where() {
+        let whole = TransformRejection {
+            violation: SchemaViolation::UnknownArchetype,
+            field: None,
+        };
+        assert_eq!(whole.to_string(), "unknown_archetype");
+
+        let field: Token = "dwell_seconds".parse().expect("canonical token");
+        let located = TransformRejection {
+            violation: SchemaViolation::ValueOutOfDomain,
+            field: Some(field),
+        };
+        assert_eq!(
+            located.to_string(),
+            "value_out_of_domain at field dwell_seconds"
+        );
+
+        let boxed: Box<dyn std::error::Error> = Box::new(located);
+        assert!(boxed.to_string().contains("dwell_seconds"));
+    }
 }

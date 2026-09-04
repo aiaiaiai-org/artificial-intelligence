@@ -17,8 +17,9 @@ work here, and each is checked rather than asserted:
   `aiai-runtime`. A training candidate has no session, proposal, admission, or effect type
   in scope to be derived from.
 - **Nothing reaches the ambient environment.** `aiai-contracts` and `aiai-runtime` carry no
-  async, platform-binding, or transport dependency. Time, entropy, identifiers, inference,
-  and authority arrive only through explicit ports.
+  async, platform-binding, or transport dependency. Time, identifiers, inference, and
+  authority arrive only through explicit ports, each of which is a parameter of some session
+  method — the kernel declares no port it does not read.
 
 `scripts/check_architecture.py` enforces the last two as dependency facts in CI.
 

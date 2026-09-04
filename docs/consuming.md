@@ -66,15 +66,21 @@ in whatever the product distributes.
 ## What the product implements
 
 The kernel reads no wall clock, no ambient randomness, and no ambient configuration.
-Everything nondeterministic or external arrives through a port the product supplies:
+Everything nondeterministic or external arrives through a port the product supplies, and
+every port below is a parameter of some session method — there is nothing to implement that
+has nowhere to go:
 
 | Port | The product provides | Returning `Err` means |
 |---|---|---|
 | `Clock` | the time source of record | no timestamp is substituted |
-| `Entropy` | explicit random bytes | no ambient randomness is read |
 | `IdentifierGeneration` | canonical `ProposalId`s | no identifier is invented |
 | `Inference` | computation, local or remote | no empty or invented success |
 | `Authority` | the boundary that permits an attempt | unavailable is never approval |
+
+`PortError` says which boundary could not answer. It implements `Display` and
+`std::error::Error`, so it drops into whatever error handling a product already has rather
+than needing a wrapper; `PortError::new(PortKind::Inference)` is the whole construction. The
+same holds for `aiai-signal`'s `TransformRejection`.
 
 Two generic parameters carry the product's meaning through the foundation without the
 foundation learning it: `Inference::Request` and `Inference::Proposal`. Wake reasons are
