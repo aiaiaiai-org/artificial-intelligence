@@ -36,7 +36,12 @@ for archive in "$@"; do
   local_shasum="$(sha1sum "${archive}" | awk '{print $1}')"
 
   error_log="$(mktemp)"
-  if remote_json="$(npm view "${name}@${version}" dist.shasum --registry "${registry}" --json 2>"${error_log}")"; then
+  set +e
+  remote_json="$(npm view "${name}@${version}" dist.shasum --registry "${registry}" --json 2>"${error_log}")"
+  status=$?
+  set -e
+
+  if [ "${status}" -eq 0 ]; then
     remote_shasum="$(
       printf '%s' "${remote_json}" |
         node -e '
@@ -58,7 +63,6 @@ for archive in "$@"; do
     continue
   fi
 
-  status=$?
   error_text="$(cat "${error_log}")"
   rm -f "${error_log}"
   if ! grep -Eq 'E404|404 Not Found' <<<"${error_text}"; then
