@@ -47,8 +47,13 @@ in the target registry rather than retrying it into an error.
 | Public npm | when the `NPM_TOKEN` secret is set | nothing |
 | GitHub Packages | when the package scope matches the repository owner | an `.npmrc` naming the scope |
 
-Both conditions are reported as workflow notices rather than failures, so a release does
-not die over a missing credential or a naming decision.
+Each condition is reported as a workflow notice, so a release names which registry it could
+not reach and why. **Reaching neither is a failure**, not a notice: a release that ran green
+and published no installable package would be a false success, so the guard stops there
+rather than tagging a version nobody can install.
+
+That is the state today — `NPM_TOKEN` is unset and the scope does not match the owner — so
+cutting `v0.2.0` right now fails at the guard until one of the two decisions below is made.
 
 **The scope is currently a constraint.** GitHub Packages resolves an npm scope to the
 repository owner and accepts only `@<owner>/*`. The packages are `@aiaiaiai/*` and the
