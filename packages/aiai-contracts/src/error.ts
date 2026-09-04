@@ -89,13 +89,12 @@ export const FAILURE_KINDS = [
 export type FailureKind = (typeof FAILURE_KINDS)[number];
 
 const FAILURE_KIND_BY_CODE: Readonly<Record<ErrorCode, FailureKind>> = {
-  // `missing_context` is `unavailable` rather than a caller mistake: the kernel reports
-  // every port failure through it, so it is what an unreachable clock, identifier source or
-  // authority looks like from outside, and `details.port` says which one could not answer.
+  // `missing_context` is `unavailable` rather than a caller mistake: the generic external
+  // port boundary uses it for an unavailable clock, identifier source, or authority.
+  // Inference has its own `inference_unavailable` code, so the two paths stay distinguishable.
   missing_context: "unavailable",
   inference_unavailable: "unavailable",
   authority_withheld: "withheld",
-  authority_scope_exceeded: "withheld",
   runtime_inactive: "gated",
   sequence_exhausted: "exhausted",
   malformed_envelope: "rejected",
@@ -104,6 +103,9 @@ const FAILURE_KIND_BY_CODE: Readonly<Record<ErrorCode, FailureKind>> = {
   subject_continuity_violation: "rejected",
   unknown_proposal: "rejected",
   duplicate_proposal_id: "rejected",
+  // Authority did not withhold here: it returned a grant broader than the session may use.
+  // The session rejects that grant as a delegation-scope violation.
+  authority_scope_exceeded: "rejected",
   signal_schema_violation: "rejected",
 };
 
@@ -116,10 +118,10 @@ export function failureKind(code: ErrorCode): FailureKind {
  * Returns whether the same operation, unchanged, may succeed if attempted again.
  *
  * Only an unavailable port qualifies. A withheld admission is a decision, and repeating it
- * asks the same question of the same authority; a rejected input is rejected on every
- * attempt. `duplicate_proposal_id` is deliberately not retryable even though a fresh
- * identifier would succeed — that is a different call, made after replacing an identifier
- * source that returned a value the session already held.
+ * asks the same question of the same authority; a rejected input or out-of-scope grant is
+ * rejected on every attempt. `DuplicateProposalId` is deliberately not retryable even
+ * though a fresh identifier would succeed — that is a different call, made after replacing
+ * an identifier source that returned a value the session already held.
  */
 export function isRetryable(code: ErrorCode): boolean {
   return failureKind(code) === "unavailable";
