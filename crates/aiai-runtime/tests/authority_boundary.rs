@@ -577,7 +577,7 @@ fn emitted_sequence_numbers_are_strictly_monotonic() {
 /// Returns the envelope a caller would submit if `admit` accepted proposal content.
 fn tampered(original: &ProposalEnvelope<Utterance>) -> ProposalEnvelope<Utterance> {
     ProposalEnvelope {
-        contract_version: "0.2.0".parse().expect("canonical contract version"),
+        contract_version: "0.3.0".parse().expect("canonical contract version"),
         operation_id: operation(200),
         proposal_id: original.proposal_id.clone(),
         sequence: aiai_contracts::DecimalU64::new(9_999),

@@ -16,11 +16,20 @@
 //! value only through an [`Authority`] decision that falls inside the session's
 //! [`DelegationScope`], and only an [`Admitted`] value can become an effect request.
 //!
-//! The kernel reads no wall clock, no ambient randomness, and no ambient configuration:
-//! time, identifiers, computation, and authority all arrive through the explicit ports in
-//! [`ports`], and every one of them is a parameter of some method here. When a port is
-//! unavailable the outcome is a typed failure — never a substituted value and never an
-//! invented success.
+//! The kernel reads no wall clock, no ambient randomness, and no ambient configuration.
+//! Time, identifiers, and authority reach it only through the explicit ports in [`ports`],
+//! and every port declared there is a parameter of some method here.
+//!
+//! Computation has two entrances rather than one. [`RuntimeSession::propose`] consumes an
+//! [`Inference`] port; [`RuntimeSession::propose_candidates`] takes candidates that a model
+//! behind an async or foreign-language boundary already produced, because a synchronous
+//! port cannot describe one without blocking on it. Neither entrance is a way past the
+//! authority boundary — the session mints and owns the resulting proposals either way — but
+//! only the port can report that computation was unreachable, so on the second path that
+//! remains the caller's outcome to surface.
+//!
+//! When a port is unavailable the outcome is a typed failure — never a substituted value
+//! and never an invented success.
 //!
 //! [`SessionSnapshot`] carries the durable half of a session across the process that
 //! served it, because a subject that only exists while one process is running is not a

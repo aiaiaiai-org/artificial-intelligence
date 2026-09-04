@@ -28,7 +28,7 @@ impl ContractVersion {
     /// Normative foundation contract version represented without parsing or ambient state.
     pub const CURRENT: Self = Self {
         major: 0,
-        minor: 1,
+        minor: 2,
         patch: 0,
     };
 
@@ -119,7 +119,18 @@ mod tests {
     }
 
     #[test]
+    fn the_current_line_does_not_accept_the_line_before_it() {
+        // Every closed enum in this crate is a wire vocabulary, and `accepts_provider`
+        // treats a pre-1.0 line as compatible across patches. A build that changed a
+        // vocabulary while keeping its minor would pass the handshake and then fail to
+        // decode the payload, so changing one moves the line.
+        let previous: ContractVersion = "0.1.0".parse().expect("the previous line");
+        assert!(!ContractVersion::CURRENT.accepts_provider(previous));
+        assert!(!previous.accepts_provider(ContractVersion::CURRENT));
+    }
+
+    #[test]
     fn current_constant_matches_wire_value() {
-        assert_eq!(ContractVersion::CURRENT.to_string(), "0.1.0");
+        assert_eq!(ContractVersion::CURRENT.to_string(), "0.2.0");
     }
 }

@@ -5,7 +5,7 @@ use crate::{CapabilityName, OperationId, ProposalId, SubjectId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
-/// Stable error-code surface for foundation contract `0.1.0`.
+/// Stable error-code surface for foundation contract `0.2.0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {

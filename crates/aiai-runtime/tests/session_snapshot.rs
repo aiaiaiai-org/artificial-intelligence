@@ -214,7 +214,7 @@ fn a_restored_session_keeps_the_state_it_was_stored_in() {
 #[test]
 fn a_snapshot_from_another_contract_line_is_refused() {
     let mut snapshot = mid_turn().into_snapshot();
-    snapshot.contract_version = "0.2.0".parse().expect("canonical contract version");
+    snapshot.contract_version = "0.3.0".parse().expect("canonical contract version");
 
     let error = RuntimeSession::restore(snapshot).expect_err("another line is not seated");
     assert_eq!(error.code(), ErrorCode::UnsupportedContractVersion);
