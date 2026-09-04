@@ -48,12 +48,23 @@ to the same revision:
 
 ```toml
 [dependencies]
-# Until the first tagged release, pin a revision reachable from master.
-aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", rev = "<commit>" }
+aiai-runtime = { git = "https://github.com/aiaiaiai-org/artificial-intelligence.git", tag = "v0.2.0" }
 ```
 
+A host client installs the other half from npm:
+
+```sh
+npm install @aiaiaiai/contracts   # the wire contract it renders
+npm install @aiaiaiai/webllm      # only if it runs a model locally
+```
+
+No release is cut yet, so neither the tag nor the packages resolve today.
+[Releasing](docs/releasing.md) is what a release does, what it verifies first, and what to
+pin until one exists.
+
 See [Consuming the foundation](docs/consuming.md) for the port, failure, and pinning
-contract, [Architecture](docs/architecture.md) for what the shapes guarantee,
+contract, [Releasing](docs/releasing.md) for how a version is cut and what to pin,
+[Architecture](docs/architecture.md) for what the shapes guarantee,
 [The host side of the contract](docs/host-contract.md) for what a browser or messenger
 client consumes, [Browser-local inference](docs/browser-local-inference.md) for the WebLLM
 adapter, and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a
