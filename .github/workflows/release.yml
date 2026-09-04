@@ -48,28 +48,37 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
+
+          publish_npm=false
           if [ -n "${NPM_TOKEN:-}" ]; then
-            echo "npm=true" >> "${GITHUB_OUTPUT}"
+            publish_npm=true
           else
-            echo "npm=false" >> "${GITHUB_OUTPUT}"
-            echo "::notice::NPM_TOKEN is not configured; skipping the public npm registry"
+            echo "::notice::NPM_TOKEN is not configured; public npm is unavailable"
           fi
+          echo "npm=${publish_npm}" >> "${GITHUB_OUTPUT}"
 
           # GitHub Packages resolves an npm scope to the repository owner, so it can only
           # accept packages named @<owner>/*. Ours are @aiaiaiai/* and the owner is
-          # aiaiaiai-org, so this is a naming decision rather than a missing credential —
-          # say which one is in force instead of failing a release over it.
+          # aiaiaiai-org, so this is a naming decision rather than a missing credential.
           owner="${GITHUB_REPOSITORY%%/*}"
           scope="$(npm pkg get name --workspaces --json | node -e '
             const packages = JSON.parse(require("node:fs").readFileSync(0, "utf-8"));
             const scopes = new Set(Object.values(packages).map((name) => name.split("/")[0]));
             process.stdout.write([...scopes].join(","));
           ')"
+
+          publish_github_packages=false
           if [ "${scope}" = "@${owner}" ]; then
-            echo "github_packages=true" >> "${GITHUB_OUTPUT}"
+            publish_github_packages=true
           else
-            echo "github_packages=false" >> "${GITHUB_OUTPUT}"
-            echo "::notice::packages are scoped ${scope} and the repository owner is ${owner}; GitHub Packages accepts only @${owner}/*, so this release publishes to the public npm registry only"
+            echo "::notice::packages are scoped ${scope} and the repository owner is ${owner}; GitHub Packages accepts only @${owner}/*"
+          fi
+          echo "github_packages=${publish_github_packages}" >> "${GITHUB_OUTPUT}"
+
+          # A green release that publishes no installable package is a false success.
+          if [ "${publish_npm}" != true ] && [ "${publish_github_packages}" != true ]; then
+            echo "::error::no npm registry is reachable; configure NPM_TOKEN or align the package scope with the repository owner before cutting a release"
+            exit 1
           fi
 
   # Nothing is published that was not verified at the exact commit the tag names.
