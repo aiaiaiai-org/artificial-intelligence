@@ -42,6 +42,17 @@ nilx-one/ai                       0x1 AI runtime: binds Bond semantics to those 
 a second product — Prism, or anything after it — composes the same crates without inheriting
 Bond, BondChain, or spectate semantics it has no use for.
 
+`nilx-one/web` reaches the foundation twice, and neither reach is a shortcut past `ai`:
+
+```text
+nilx-one/web  ──uses──▶  @aiaiaiai/webllm     local computation, text only
+      │                  @aiaiaiai/contracts  the wire contract of what it renders
+      └──talks to──▶  nilx-one/ai  ──consumes──▶  aiai-runtime + aiai-contracts
+```
+
+The client owns no session and takes no authority decision. It runs a model on the device,
+hands the result to `ai`, decodes the turn `ai` reports, and renders it.
+
 Licensing runs the compatible direction: an Apache-2.0 foundation can be consumed by an
 MPL-2.0 product repository.
 
@@ -58,8 +69,9 @@ MPL-2.0 product repository.
 | An attempted action | `Admitted` → `EffectRequestEnvelope` | dispatch is an attempt, never completion |
 | Reciprocal action, BondChain, `bond.chain` | **absent by design** | `0x1` and `core` — never the foundation |
 | `route_traversal`, `poi_dwell`, `cell_transit` | archetypes `ai` registers in `SchemaRegistry` | `ai` and its governance process |
+| A turn as the Web client receives it | `TurnOutcome` decoded by `@aiaiaiai/contracts` | `ai` owns the payloads; the client owns none of them |
 
-The last two rows carry most of the weight.
+The BondChain and archetype rows carry most of the weight.
 
 ### BondChain is deliberately absent
 
@@ -174,6 +186,28 @@ It is enough for the first Avaia slice without moving Avaia semantics into this 
 6. Leaving `SPECTATE` quiesces the product runtime. The browser adapter interrupts an active
    generation and may unload GPU resources; neither operation changes the AI Bond's identity.
 
+### What the Web client decodes
+
+The client renders a turn it did not run, so it needs the receiving half of the same
+contract. `@aiaiaiai/contracts` supplies it, and nothing else about the slice moves into the
+browser:
+
+- The turn arrives as a `TurnOutcome`. A failed turn is an `error` member carrying a closed
+  `ErrorCode`, so a degraded turn renders as the failure it was rather than as an empty
+  reply. Whether `ai` reports an unreachable local model that way is `ai`'s decision — there
+  is no inference port on this path to raise it — but the shape for saying so already exists.
+- A proposal the client renders carries an identifier the session minted. The client sends
+  that identifier back for a decision; it never rebuilds a proposal in order to submit one,
+  and there is no payload through which substituted content could arrive.
+- `sequence` and `session_revision` decode to `bigint`. A client that read them as JavaScript
+  numbers would report a different value than the session emitted once either passed 2^53.
+- The mode toggle targets an `ActivationState`. `SPECTATE -> MANUAL -> SPECTATE` needs two
+  explicit steps because settling is the owner's assertion, and the client can render that
+  refusal without a round trip — the same table the kernel answers is checked in the browser.
+
+The client holds no `Admitted` value and constructs no effect. Decoding a turn is not
+authority, and a proposal on screen is a proposal until the owner decides it.
+
 For this slice, Avaia can respond locally in the current conversation and expose truthful
 runtime state. It has no tools, durable memory, autonomous background life, remote fallback,
 or ability to claim that another Bond acted. Those are separate product capabilities with
@@ -213,6 +247,7 @@ idempotence, and a forked client's payloads meeting the validator.
 
 - [Foundation Architecture](architecture.md)
 - [Consuming the foundation](consuming.md) — the dependency, port, and pinning contract
+- [The host side of the contract](host-contract.md) — what a Web client consumes
 - [Browser-local inference](browser-local-inference.md)
 - [`nilx-one/0x1`](https://github.com/nilx-one/0x1) — protocol specification
 - [`nilx-one/core`](https://github.com/nilx-one/core) — deterministic shared product behavior

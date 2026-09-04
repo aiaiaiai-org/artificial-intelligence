@@ -1,0 +1,103 @@
+// © 2026 aiaiaiai · aiaiaiai.org
+// SPDX-License-Identifier: Apache-2.0
+
+export {
+  ACTIVATION_STATES,
+  ACTIVATION_TRANSITIONS,
+  ActivationRefused,
+  applyActivation,
+  mayInitiate,
+  maySettleInFlight,
+  resolveActivation,
+  type ActivationState,
+  type ActivationTransition,
+} from "./activation.js";
+export {
+  CanonicalJsonError,
+  decodeCanonicalJson,
+  encodeCanonicalJson,
+  encodeCanonicalJsonBytes,
+  type CanonicalJsonRejection,
+  type CanonicalJsonValue,
+} from "./canonical.js";
+export {
+  CAPABILITY_NAME_MAX_LEN,
+  isCapabilityName,
+  parseCapabilityName,
+  type CapabilityName,
+} from "./capability.js";
+export {
+  CONTEXT_PORTS,
+  correlationOf,
+  decodeFoundationError,
+  encodeFoundationError,
+  ERROR_CODES,
+  FoundationFailure,
+  malformedEnvelope,
+  SCHEMA_VIOLATIONS,
+  VARIANT_KINDS,
+  type ContextPort,
+  type ErrorCode,
+  type FoundationErrorDetails,
+  type FoundationErrorValue,
+  type SchemaViolation,
+  type VariantKind,
+} from "./error.js";
+export {
+  decodeAdmissionEnvelope,
+  decodeEffectRequestEnvelope,
+  decodeProposalEnvelope,
+  decodeTurnOk,
+  decodeTurnOutcome,
+  decodeWakeEnvelope,
+  encodeAdmissionEnvelope,
+  encodeEffectRequestEnvelope,
+  encodeProposalEnvelope,
+  encodeTurnOutcome,
+  encodeWakeEnvelope,
+  type AdmissionEnvelope,
+  type EffectRequestEnvelope,
+  type PayloadDecoder,
+  type PayloadEncoder,
+  type ProposalEnvelope,
+  type TurnOk,
+  type TurnOutcome,
+  type WakeEnvelope,
+} from "./envelope.js";
+export {
+  formatSha256Digest,
+  IDENTIFIER_SHAPES,
+  isIdentifier,
+  parseIdentifier,
+  type ControllerId,
+  type Identifier,
+  type IdentifierKind,
+  type IdentifierShape,
+  type ModelId,
+  type OperationId,
+  type ProposalId,
+  type RuntimeId,
+  type SessionId,
+  type Sha256Digest,
+  type SubjectId,
+} from "./identifier.js";
+export {
+  DECIMAL_U64_MAX,
+  formatDecimalU64,
+  isDecimalU64,
+  nextSequence,
+  parseDecimalU64,
+} from "./scalar.js";
+export {
+  acceptsProvider,
+  CONTRACT_VERSION,
+  CURRENT_CONTRACT_VERSION,
+  formatContractVersion,
+  parseContractVersion,
+  requireCompatibleContract,
+  type ContractVersion,
+} from "./version.js";
+export {
+  ContractViolation,
+  type ContractViolationReason,
+} from "./violation.js";

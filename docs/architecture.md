@@ -34,11 +34,21 @@ crates/
 └── aiai-signal      # closed-schema behavioral signal transform and validator
 
 packages/
+├── aiai-contracts   # host-side mirror of the wire contract; no runtime dependencies
 └── aiai-webllm      # browser-local inference adapter; no product semantics or authority
 ```
 
 Dependency direction is one-way. `aiai-runtime` depends only on `aiai-contracts`.
-`aiai-signal` depends only on `aiai-contracts`. Contracts depend on neither.
+`aiai-signal` depends only on `aiai-contracts`. Contracts depend on neither. Neither
+host-side package depends on the other, and `aiai-contracts` depends on nothing at all.
+
+`packages/aiai-contracts` is the host side of the wire contract rather than a second
+definition of it. A product runtime produces payloads from Rust; the client that renders
+them is usually in another language, and every rule in [Contract
+versioning](#contract-versioning) holds only if that side observes it too. The package
+decodes and encodes; it owns no session state and takes no authority decision. Both
+implementations answer one corpus — `fixtures/contract-wire-0.2.0.json` — so a mirror that
+drifts fails a build. See [The host side of the contract](host-contract.md).
 
 `aiai-webllm` is a platform adapter rather than a Rust workspace member. It owns browser
 capability probing, model cache/load lifecycle, a dedicated Web Worker, and streaming text
@@ -227,11 +237,14 @@ it were canonical.
 
 Cross-runtime payloads carry integers as decimal strings and forbid JSON numeric tokens, so
 a JavaScript host cannot silently narrow a value through IEEE-754 rounding. `canonical_json`
-enforces that, plus NFC strings and ASCII object member names.
+enforces that, plus NFC strings and ASCII object member names — and `@aiaiaiai/contracts`
+enforces the same three on the receiving side, because a rule the producer keeps and the
+consumer does not is a rule about one process rather than about a boundary.
 
 ## Related
 
 - [Consuming the foundation](consuming.md) — how a product repository depends on these crates
+- [The host side of the contract](host-contract.md) — the same contract, in the client
 - [Browser-local inference](browser-local-inference.md) — concrete WebGPU/WebLLM adapter
 - [Integrating a product AI runtime](nilx-one-ai-integration.md) — how a product repository
   composes these crates, worked through `nilx-one/ai`.

@@ -63,6 +63,20 @@ wall clock, no ambient randomness, and no ambient configuration, and `getrandom`
 and `reqwest` are refused by the architecture check. Anything that would break the target
 would have broken the port model first.
 
+### The client on the other side
+
+A product runtime is Rust; the client that renders a turn usually is not. `@aiaiaiai/contracts`
+is that side of the same contract — a zero-dependency TypeScript package that decodes what
+the kernel emits and refuses what the kernel would refuse:
+
+```json
+{ "dependencies": { "@aiaiaiai/contracts": "0.2.0" } }
+```
+
+It is not a session and holds no authority. A host decodes a `TurnOutcome`, renders the
+proposals it names, and sends a decision back to the runtime that owns them. See
+[The host side of the contract](host-contract.md) for what it covers and what it does not.
+
 ### Licensing
 
 The foundation is Apache-2.0. A product under a different license — `nilx-one/ai` is
@@ -175,7 +189,10 @@ it did not run.
 
 A turn usually has to leave the process that ran it — to a browser, a host adapter, a
 caller across a transport. `TurnOk` and `TurnOutcome` are that closed shape, and the session
-assembles the report from its own state rather than leaving a product to reconstruct it:
+assembles the report from its own state rather than leaving a product to reconstruct it.
+Whatever receives it decodes the same shape: `@aiaiaiai/contracts` is that decoder for a
+JavaScript host, and `fixtures/contract-wire-0.2.0.json` is the corpus that keeps the two
+sides agreeing about it.
 
 ```rust
 let turn = session.turn_ok(operation_id, &still_pending, effect_requests)?;
@@ -247,5 +264,6 @@ that: it returns text, the product wraps it as a proposal payload, and
 ## Related
 
 - [Foundation architecture](architecture.md)
+- [The host side of the contract](host-contract.md)
 - [Integrating a product AI runtime](nilx-one-ai-integration.md)
 - [Browser-local inference](browser-local-inference.md)
