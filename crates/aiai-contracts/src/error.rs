@@ -473,7 +473,7 @@ impl std::error::Error for FoundationError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{ContextPort, ErrorCode, FoundationError, SchemaViolation};
+    use super::{ContextPort, ErrorCode, FailureKind, FoundationError, SchemaViolation};
     use crate::canonical_json;
 
     /// `as_str` is what a reader sees; serde is what a peer reads. One spelling, or a log
@@ -504,6 +504,15 @@ mod tests {
         ] {
             assert_eq!(code.as_str(), wire_token(&code));
         }
+    }
+
+    #[test]
+    fn authority_scope_violation_is_rejected_not_withheld() {
+        assert_eq!(
+            ErrorCode::AuthorityScopeExceeded.kind(),
+            FailureKind::Rejected
+        );
+        assert!(!ErrorCode::AuthorityScopeExceeded.is_retryable());
     }
 
     #[test]
@@ -541,7 +550,7 @@ mod tests {
     fn omits_empty_details_from_the_wire_form() {
         let error = FoundationError::runtime_inactive(None);
         let encoded = canonical_json(&error).expect("canonical JSON");
-        assert_eq!(encoded, br#"{\"code\":\"runtime_inactive\"}"#);
+        assert_eq!(encoded, br#"{"code":"runtime_inactive"}"#);
     }
 
     #[test]
@@ -550,7 +559,7 @@ mod tests {
         let encoded = canonical_json(&error).expect("canonical JSON");
         assert_eq!(
             encoded,
-            br#"{\"code\":\"missing_context\",\"details\":{\"port\":\"inference\"}}"#
+            br#"{"code":"missing_context","details":{"port":"inference"}}"#
         );
         assert_eq!(error.code(), ErrorCode::MissingContext);
         assert_eq!(
