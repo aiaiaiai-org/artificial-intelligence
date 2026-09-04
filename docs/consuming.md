@@ -85,9 +85,12 @@ to go. Computation is the one that also has a second entrance, described under
 | `Authority` | the boundary that permits an attempt | unavailable is never approval |
 
 `PortError` says which boundary could not answer. It implements `Display` and
-`std::error::Error`, so it drops into whatever error handling a product already has rather
-than needing a wrapper; `PortError::new(PortKind::Inference)` is the whole construction. The
-same holds for `aiai-signal`'s `TransformRejection`.
+`std::error::Error`, so it can be printed, boxed as `Box<dyn Error>`, carried by an
+`anyhow`-style error, and returned as a `source`. A product's own error enum still needs
+`From<PortError>` — `?` converts through that impl and nothing else — but that is a wrapper
+variant rather than a newtype that has to re-implement the traits first.
+`PortError::new(PortKind::Inference)` is the whole construction. The same holds for
+`aiai-signal`'s `TransformRejection`.
 
 Two generic parameters carry the product's meaning through the foundation without the
 foundation learning it: `Inference::Request` and `Inference::Proposal`. Wake reasons are
