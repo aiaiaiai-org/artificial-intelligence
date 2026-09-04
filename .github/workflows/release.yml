@@ -8,39 +8,103 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  guard:
+  prepare:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.tag.outputs.version }}
+      version: ${{ steps.guard.outputs.version }}
       publish_npm: ${{ steps.registries.outputs.npm }}
       publish_github_packages: ${{ steps.registries.outputs.github_packages }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      - name: A release is a tag
-        if: github.ref_type != 'tag'
-        run: |
-          # Read the ref from the environment rather than interpolating it into the script.
-          echo "::error::${GITHUB_REF} is not a tag; a release is cut from a tag"
-          exit 1
-
-      - name: The tag names the workspace version
-        id: tag
+      - name: Verify the tagged tree was already proven by PR CI
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
           tagged="${GITHUB_REF_NAME#v}"
           declared="$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version'])")"
           if [ "${tagged}" != "${declared}" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not name the workspace version ${declared}"
             exit 1
           fi
+
+          git fetch --no-tags origin master
+          master_sha="$(git rev-parse origin/master)"
+          if [ "${GITHUB_SHA}" != "${master_sha}" ]; then
+            echo "::error::release tag must name the current master commit ${master_sha}, got ${GITHUB_SHA}"
+            exit 1
+          fi
+
+          read -r -a parents <<<"$(git show -s --format=%P "${GITHUB_SHA}")"
+          if [ "${#parents[@]}" -ne 2 ]; then
+            echo "::error::release commit must be a verified pull-request merge commit"
+            exit 1
+          fi
+          tested_head="${parents[1]}"
+
+          merge_tree="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          tested_tree="$(git rev-parse "${tested_head}^{tree}")"
+          if [ "${merge_tree}" != "${tested_tree}" ]; then
+            echo "::error::merged tree ${merge_tree} differs from tested PR head tree ${tested_tree}"
+            exit 1
+          fi
+
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${tested_head}&event=pull_request&per_page=100" \
+            > /tmp/pr-runs.json
+
+          python3 - "${tested_head}" /tmp/pr-runs.json <<'PY'
+          import json
+          import sys
+
+          head = sys.argv[1]
+          with open(sys.argv[2], encoding="utf-8") as source:
+              runs = json.load(source)["workflow_runs"]
+
+          required = {"Rust CI", "Web adapter CI", "Repository policy"}
+          latest = {}
+          for run in runs:
+              name = run.get("name")
+              if name not in required:
+                  continue
+              current = latest.get(name)
+              if current is None or run["id"] > current["id"]:
+                  latest[name] = run
+
+          missing = sorted(required - latest.keys())
+          failed = sorted(
+              name
+              for name, run in latest.items()
+              if run.get("status") != "completed" or run.get("conclusion") != "success"
+          )
+          if missing or failed:
+              parts = []
+              if missing:
+                  parts.append(f"missing: {', '.join(missing)}")
+              if failed:
+                  parts.append(f"not green: {', '.join(failed)}")
+              print(f"::error::PR head {head} is not fully verified ({'; '.join(parts)})")
+              raise SystemExit(1)
+          PY
+
           echo "version=${tagged}" >> "${GITHUB_OUTPUT}"
+          echo "verified PR head ${tested_head}; correctness CI is reused, not rerun"
 
       - name: Which registries this release can reach
         id: registries
@@ -75,61 +139,33 @@ jobs:
           fi
           echo "github_packages=${publish_github_packages}" >> "${GITHUB_OUTPUT}"
 
-          # A green release that publishes no installable package is a false success.
           if [ "${publish_npm}" != true ] && [ "${publish_github_packages}" != true ]; then
             echo "::error::no npm registry is reachable; configure NPM_TOKEN or align the package scope with the repository owner before cutting a release"
             exit 1
           fi
 
-  # Nothing is published that was not verified at the exact commit the tag names.
-  verify:
-    runs-on: ubuntu-latest
-    needs: guard
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test --locked --workspace --all-features
-      - name: Architecture dependency boundary
-        run: python3 scripts/check_architecture.py
-      - name: Repository policy
-        run: python3 scripts/check_repository_policy.py Apache-2.0
-
+      # Building the package is release work, not a second correctness suite. The tarballs
+      # are produced once here and the publishing jobs consume these exact artifacts.
       - run: npm ci
-      - run: npm run typecheck:web
-      - run: npm run test:web
-      - run: npm run build:web
-
-      # A product compiles these crates into its own browser artifact, and the dependency
-      # policy is a licensing and advisory gate. Both run on every pull request; a release
-      # runs them again so "verified at this commit" covers everything CI covers.
-      - name: Browser target
+      - name: Build npm release artifacts once
         run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --locked --target wasm32-unknown-unknown \
-            -p aiai-contracts -p aiai-runtime -p aiai-signal
+          set -euo pipefail
+          rm -rf release-packages
+          mkdir -p release-packages
+          npm pack --workspaces --pack-destination release-packages
+          test -n "$(find release-packages -maxdepth 1 -type f -name '*.tgz' -print -quit)"
 
-  verify-dependency-policy:
-    runs-on: ubuntu-latest
-    needs: guard
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/upload-artifact@v4
         with:
-          command: check
+          name: npm-packages-${{ steps.guard.outputs.version }}
+          path: release-packages/*.tgz
+          if-no-files-found: error
+          retention-days: 7
 
   publish-npm:
     runs-on: ubuntu-latest
-    needs: [guard, verify, verify-dependency-policy]
-    if: needs.guard.outputs.publish_npm == 'true'
+    needs: prepare
+    if: needs.prepare.outputs.publish_npm == 'true'
     permissions:
       contents: read
     steps:
@@ -137,18 +173,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - name: Publish
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-packages-${{ needs.prepare.outputs.version }}
+          path: release-packages
+      - name: Publish exact prepared artifacts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: ./scripts/publish_packages.sh https://registry.npmjs.org
+        run: ./scripts/publish_packages.sh https://registry.npmjs.org release-packages/*.tgz
 
   publish-github-packages:
     runs-on: ubuntu-latest
-    needs: [guard, verify, verify-dependency-policy]
-    if: needs.guard.outputs.publish_github_packages == 'true'
+    needs: prepare
+    if: needs.prepare.outputs.publish_github_packages == 'true'
     permissions:
       contents: read
       packages: write
@@ -157,10 +195,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
           registry-url: https://npm.pkg.github.com
-      - run: npm ci
-      - name: Publish
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-packages-${{ needs.prepare.outputs.version }}
+          path: release-packages
+      - name: Publish exact prepared artifacts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./scripts/publish_packages.sh https://npm.pkg.github.com
+        run: ./scripts/publish_packages.sh https://npm.pkg.github.com release-packages/*.tgz
