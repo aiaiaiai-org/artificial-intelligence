@@ -1,0 +1,324 @@
+<!doctype html>
+<!-- © 2026 aiaiaiai · aiaiaiai.org -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>WebGPU capability probe</title>
+<style>
+  :root {
+    --ink: #16161a;
+    --ink-dim: #5c5c66;
+    --ground: #fbfbfa;
+    --panel: #ffffff;
+    --line: #e2e2df;
+    --yes: #1d6b3f;
+    --no: #97321f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #ececeb;
+      --ink-dim: #9b9ba3;
+      --ground: #15151a;
+      --panel: #1d1d23;
+      --line: #32323a;
+      --yes: #7ed4a0;
+      --no: #ef9683;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 1.25rem 1rem 3rem;
+    background: var(--ground);
+    color: var(--ink);
+    font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 44rem; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1rem; margin: 2rem 0 .5rem; color: var(--ink-dim); font-weight: 600; }
+  p { margin: .25rem 0 1rem; color: var(--ink-dim); font-size: .9rem; }
+  .verdict {
+    padding: .85rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: var(--panel);
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+  }
+  dl {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem 1rem;
+    padding: .7rem 1rem;
+    border-top: 1px solid var(--line);
+  }
+  .row:first-child { border-top: 0; }
+  dt {
+    flex: 1 1 12rem;
+    min-width: 0;
+    font-size: .85rem;
+    color: var(--ink-dim);
+    word-break: break-word;
+  }
+  dd {
+    flex: 0 1 auto;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+    word-break: break-word;
+  }
+  .decisive dt { color: var(--ink); }
+  .yes { color: var(--yes); }
+  .no { color: var(--no); }
+  pre {
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: var(--panel);
+    overflow-x: auto;
+    font-size: .78rem;
+    line-height: 1.45;
+    -webkit-user-select: all;
+    user-select: all;
+  }
+  button {
+    font: inherit;
+    font-size: .85rem;
+    padding: .5rem .9rem;
+    margin-bottom: .5rem;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    background: var(--panel);
+    color: var(--ink);
+  }
+  footer { margin-top: 2.5rem; font-size: .8rem; color: var(--ink-dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>WebGPU capability probe</h1>
+  <p>Reports what this browser's WebGPU adapter offers. It requests an adapter and
+     nothing else: no device, no shader, no model, no download.</p>
+
+  <div class="verdict" id="verdict">Probing…</div>
+
+  <h2>Decisive</h2>
+  <dl id="decisive"></dl>
+
+  <h2>Other limits</h2>
+  <dl id="limits"></dl>
+
+  <h2>Adapter</h2>
+  <dl id="adapter"></dl>
+
+  <h2>Surface</h2>
+  <dl id="surface"></dl>
+
+  <h2>Record</h2>
+  <p>Paste this into <code>probes/webgpu/RESULTS.md</code>.</p>
+  <button id="copy" type="button">Copy JSON</button>
+  <pre id="json">…</pre>
+
+  <footer>Adapter limits are the ceiling this device can grant, not what a default
+     device receives. A pipeline that needs more than the default must ask for it in
+     <code>requestDevice</code>, and cannot ask for more than shown here.</footer>
+</main>
+<script>
+"use strict";
+
+// Reasons a surface has no usable adapter. These are the same three causes the
+// browser-local inference adapter reports as `unavailable`, named identically so a
+// probe result can be read straight against it.
+const UNAVAILABLE = {
+  insecure_context: "No WebGPU: the page is not a secure context (needs https or localhost).",
+  webgpu_missing: "No WebGPU: navigator.gpu is absent on this surface.",
+  webgpu_adapter_unavailable: "No WebGPU: navigator.gpu exists but granted no adapter.",
+};
+
+// Limits worth recording beyond the two that decide anything. Each is a ceiling a
+// quantized kernel can hit before model size does.
+const OTHER_LIMITS = [
+  "maxComputeWorkgroupStorageSize",
+  "maxComputeInvocationsPerWorkgroup",
+  "maxStorageBuffersPerShaderStage",
+  "maxBindGroups",
+];
+
+function bytes(value) {
+  if (typeof value !== "number") return "—";
+  const mib = value / (1024 * 1024);
+  return mib >= 1024
+    ? `${(mib / 1024).toFixed(2)} GiB (${value})`
+    : `${mib.toFixed(0)} MiB (${value})`;
+}
+
+function put(listId, label, text, tone) {
+  const row = document.createElement("div");
+  row.className = tone === "decisive" ? "row decisive" : "row";
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  const dd = document.createElement("dd");
+  dd.textContent = text;
+  if (tone === "yes" || tone === "no") dd.className = tone;
+  row.append(dt, dd);
+  document.getElementById(listId).append(row);
+}
+
+function flag(listId, label, value) {
+  const known = typeof value === "boolean";
+  const row = document.createElement("div");
+  row.className = "row decisive";
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  const dd = document.createElement("dd");
+  dd.textContent = known ? (value ? "yes" : "no") : "—";
+  if (known) dd.className = value ? "yes" : "no";
+  row.append(dt, dd);
+  document.getElementById(listId).append(row);
+}
+
+// `GPUAdapter.info` is the current shape; `requestAdapterInfo()` is the older one and is
+// still what some shipped WebViews expose. A probe that only read one would report a
+// blank adapter on the surfaces it most needs to describe.
+async function adapterInfo(adapter) {
+  if (adapter.info) return adapter.info;
+  if (typeof adapter.requestAdapterInfo === "function") {
+    try {
+      return await adapter.requestAdapterInfo();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function plainInfo(info) {
+  if (!info) return null;
+  const out = {};
+  for (const key of ["vendor", "architecture", "device", "description", "subgroupMinSize", "subgroupMaxSize"]) {
+    const value = info[key];
+    if (value !== undefined && value !== "") out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+async function probe() {
+  if (!window.isSecureContext) return { reason: "insecure_context" };
+  if (!navigator.gpu) return { reason: "webgpu_missing" };
+
+  let adapter = null;
+  try {
+    adapter = await navigator.gpu.requestAdapter();
+  } catch (error) {
+    return { reason: "webgpu_adapter_unavailable", error: String(error) };
+  }
+  if (!adapter) return { reason: "webgpu_adapter_unavailable" };
+
+  const limits = {};
+  for (const key of ["maxBufferSize", "maxStorageBufferBindingSize", ...OTHER_LIMITS]) {
+    limits[key] = adapter.limits?.[key];
+  }
+  return {
+    adapter,
+    f16: adapter.features.has("shader-f16"),
+    features: [...adapter.features].sort(),
+    limits,
+    info: plainInfo(await adapterInfo(adapter)),
+  };
+}
+
+function surface() {
+  return {
+    userAgent: navigator.userAgent,
+    // A WebView embedded in another app is exactly the case where a probe result may
+    // differ from the same engine's standalone browser, so record the framing too.
+    embedded: window.top !== window.self,
+    secureContext: window.isSecureContext,
+    devicePixelRatio: window.devicePixelRatio,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    probedAt: new Date().toISOString(),
+  };
+}
+
+async function main() {
+  const result = await probe();
+  const context = surface();
+  const record = { ...context };
+
+  if (result.reason) {
+    document.getElementById("verdict").textContent = UNAVAILABLE[result.reason];
+    record.webgpu = false;
+    record.reason = result.reason;
+    if (result.error) record.error = result.error;
+    flag("decisive", "shader-f16", undefined);
+    put("decisive", "maxBufferSize", "—", "decisive");
+    put("decisive", "maxStorageBufferBindingSize", "—", "decisive");
+  } else {
+    document.getElementById("verdict").textContent = result.f16
+      ? "WebGPU with shader-f16. Record the buffer limits below."
+      : "WebGPU without shader-f16. Half-precision kernels cannot run here.";
+    record.webgpu = true;
+    record.f16 = result.f16;
+    record.limits = result.limits;
+    record.features = result.features;
+    record.info = result.info;
+
+    flag("decisive", "shader-f16", result.f16);
+    put("decisive", "maxBufferSize", bytes(result.limits.maxBufferSize), "decisive");
+    put("decisive", "maxStorageBufferBindingSize", bytes(result.limits.maxStorageBufferBindingSize), "decisive");
+
+    for (const key of OTHER_LIMITS) {
+      const value = result.limits[key];
+      put("limits", key, typeof value === "number" ? String(value) : "—");
+    }
+
+    const info = result.info ?? {};
+    for (const key of ["vendor", "architecture", "device", "description"]) {
+      put("adapter", key, info[key] ? String(info[key]) : "not reported");
+    }
+    put("adapter", "features", String(result.features.length));
+    for (const feature of result.features) put("adapter", feature, "yes", "yes");
+  }
+
+  put("surface", "secure context", String(context.secureContext));
+  put("surface", "embedded frame", String(context.embedded));
+  put("surface", "viewport", context.viewport);
+  put("surface", "devicePixelRatio", String(context.devicePixelRatio));
+  put("surface", "probed at", context.probedAt);
+  put("surface", "user agent", context.userAgent);
+
+  const json = JSON.stringify(record, null, 2);
+  document.getElementById("json").textContent = json;
+
+  const copy = document.getElementById("copy");
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      copy.textContent = "Copied";
+    } catch {
+      // Embedded WebViews routinely deny clipboard write. Selecting the block is the
+      // fallback that always works, and the <pre> is already user-select: all.
+      copy.textContent = "Copy denied — tap the text below";
+    }
+  });
+}
+
+main().catch((error) => {
+  document.getElementById("verdict").textContent = `Probe failed: ${error}`;
+});
+</script>
+</body>
+</html>

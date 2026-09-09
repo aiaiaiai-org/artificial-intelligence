@@ -18,6 +18,9 @@ packages/
 
 fixtures/
 └── contract-wire-0.2.0.json   # one corpus; the Rust crates and the mirror both answer it
+
+probes/
+└── webgpu                     # static device capability probe; no build step, no deps
 ```
 
 Dependency direction is one-way: `aiai-runtime` and `aiai-signal` depend only on
@@ -68,7 +71,8 @@ contract, [Releasing](docs/releasing.md) for how a version is cut and what to pi
 [The host side of the contract](docs/host-contract.md) for what a browser or messenger
 client consumes, [Routing a failure](docs/failure-routing.md) for how one reaches a record
 and a person, [Browser-local inference](docs/browser-local-inference.md) for the WebLLM
-adapter, and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a
+adapter, [the WebGPU capability probe](probes/webgpu/README.md) for what a given device
+actually grants that adapter, and [Integrating a product AI runtime](docs/nilx-one-ai-integration.md) for how a
 product repository composes these layers.
 
 ## Local verification

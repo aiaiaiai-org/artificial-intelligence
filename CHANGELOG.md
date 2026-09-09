@@ -38,6 +38,11 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
 - **`@aiaiaiai/contracts`** — the host side of the same wire contract, with no runtime
   dependencies, so a client observes the rules the producer keeps rather than re-deriving
   them.
+- **`probes/webgpu`** — a dependency-free static page that reports a device's WebGPU
+  adapter features and limits, naming its unavailable reasons exactly as
+  `@aiaiaiai/webllm` does. It requests an adapter and stops: no device, no shader, no
+  model, no download. Results are recorded per surface in `probes/webgpu/RESULTS.md`,
+  where an unmeasured surface stays visibly unmeasured.
 - **`fixtures/contract-wire-0.2.0.json`** — one corpus answered by both implementations, so
   a drifting mirror fails a build rather than a payload.
 - `RuntimeSession::snapshot` and `restore`, so a subject outlives the process serving it,
