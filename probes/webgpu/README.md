@@ -28,15 +28,29 @@ the adapter's `unavailable` state instead of having to be translated into it.
 is absent on an insecure origin too, so a probe that reported only "no WebGPU" would send
 you looking for a missing GPU when the actual cause is the URL you opened it from.
 
-## The two fields that decide anything
+## The fields that decide anything
 
-| Field | Why it decides |
-|---|---|
-| `shader-f16` | Without it, half-precision kernels either fail outright or degrade past usefulness. Its absence is a stop, not a slowdown. |
-| `maxBufferSize` | What forces weight chunking. Model size is not the constraint — the largest single buffer the device will grant is, and that ceiling has historically been far lower inside mobile WebViews than on desktop. |
+Four of them are the pinned runtime's own floors. `@mlc-ai/web-llm@0.2.84` asks for these
+limits when it acquires a WebGPU device and throws if one is refused, so a surface short of
+any of them starts no engine at all — whatever model it is asked for, and before any
+catalog is consulted. The page marks all four decisive, says of each whether it `clears`, is
+`SHORT`, or was `not reported`, and records its verdict as `belowRuntimeFloor`.
 
-`maxStorageBufferBindingSize` is reported next to them because a buffer that can be
-allocated but not bound in one piece constrains a kernel the same way.
+A limit an adapter did not report is unknown, not short: WebGPU requires an adapter to
+expose every limit, so an absent one is a gap in that browser, and refusing on it would turn
+a reporting gap into a verdict about a device.
+
+| Field | Floor | Why it decides |
+|---|---|---|
+| `maxBufferSize` | 256 MiB | What forces weight chunking. Model size is not the constraint — the largest single buffer the device will grant is, and that ceiling has historically been far lower inside mobile WebViews than on desktop. The runtime asks for 1 GiB and falls back once to this. |
+| `maxStorageBufferBindingSize` | 128 MiB | A buffer that can be allocated but not bound in one piece constrains a kernel the same way. Also 1 GiB requested, with one fallback. |
+| `maxComputeWorkgroupStorageSize` | 32 KiB | Requested with no fallback at all. |
+| `maxStorageBuffersPerShaderStage` | 10 | Requested with no fallback, against a WebGPU **default of 8** — which is how a perfectly modern device fails here while every other row looks healthy. |
+
+`shader-f16` decides separately, and above the floors rather than among them: without it,
+half-precision kernels either fail outright or degrade past usefulness. Its absence is a
+stop, not a slowdown. It is a property of the model a product chose to serve rather than of
+the runtime, so a surface can clear every floor and still run no half-precision entry.
 
 Everything else on the page is recorded rather than decided on. It is cheap to capture
 once, on a device that may not be at hand again.

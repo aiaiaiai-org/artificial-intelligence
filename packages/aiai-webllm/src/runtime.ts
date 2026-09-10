@@ -1,24 +1,53 @@
 // © 2026 aiaiaiai · aiaiaiai.org
 // SPDX-License-Identifier: Apache-2.0
 
+import { validateServedModel, type ServedModel } from "./catalog.js";
 import {
+  belowRuntimeFloor,
   DEFAULT_LOCAL_MODEL_ID,
   LocalInferenceError,
+  missingFeatures,
+  type ResponseConstraint,
   type GenerationOptions,
   type LocalInferenceHost,
   type LocalInferenceState,
   type LocalMessage,
   type LocalTextEngine,
+  type ResolvedGenerationOptions,
 } from "./contracts.js";
 
-const DEFAULT_GENERATION_OPTIONS: Required<GenerationOptions> = {
+const DEFAULT_GENERATION_OPTIONS = {
   maxTokens: 128,
   temperature: 0.7,
   topP: 0.8,
-};
+  responseFormat: undefined,
+} satisfies ResolvedGenerationOptions;
 const MAX_GENERATION_TOKENS = 512;
 
 export type StateListener = (state: LocalInferenceState) => void;
+
+/**
+ * Refuses a constraint that would not constrain anything.
+ *
+ * An empty grammar or schema is worse than none: it reads as a constrained decode at every
+ * call site while placing no constraint on the decoder at all, so a product would parse
+ * arbitrary text believing it could not be arbitrary.
+ */
+function assertUsableConstraint(
+  constraint: ResponseConstraint | undefined,
+): void {
+  if (constraint === undefined || constraint.type === "text") {
+    return;
+  }
+  const body =
+    constraint.type === "grammar" ? constraint.grammar : constraint.schema;
+  if (typeof body !== "string" || body.trim() === "") {
+    throw new LocalInferenceError(
+      "invalid_request",
+      `a ${constraint.type} response format must not be empty`,
+    );
+  }
+}
 
 /**
  * Explicit lifecycle for one browser-local text model.
@@ -29,18 +58,33 @@ export type StateListener = (state: LocalInferenceState) => void;
 export class LocalInferenceRuntime {
   readonly #host: LocalInferenceHost;
   readonly #modelId: string;
+  readonly #requiredFeatures: readonly string[];
   readonly #listeners = new Set<StateListener>();
   #engine: LocalTextEngine | undefined;
   #loadOperation: Promise<void> | undefined;
   #state: LocalInferenceState;
 
+  /**
+   * Takes either a bare identifier from the pinned runtime's prebuilt registry, or a
+   * {@link ServedModel} a product serves from its own origin.
+   *
+   * A served entry is the richer of the two because it states what it requires, which is
+   * what lets `probe()` refuse a surface before a download instead of after one.
+   */
   public constructor(
     host: LocalInferenceHost,
-    modelId: string = DEFAULT_LOCAL_MODEL_ID,
+    model: string | ServedModel = DEFAULT_LOCAL_MODEL_ID,
   ) {
+    if (typeof model === "string") {
+      this.#modelId = model;
+      this.#requiredFeatures = [];
+    } else {
+      validateServedModel(model);
+      this.#modelId = model.modelId;
+      this.#requiredFeatures = [...(model.requiredFeatures ?? [])];
+    }
     this.#host = host;
-    this.#modelId = modelId;
-    this.#state = { kind: "idle", modelId };
+    this.#state = { kind: "idle", modelId: this.#modelId };
   }
 
   public get state(): LocalInferenceState {
@@ -69,7 +113,35 @@ export class LocalInferenceRuntime {
         this.#setState({
           kind: "unavailable",
           modelId: this.#modelId,
-          reason: webGpu.reason ?? "webgpu_adapter_unavailable",
+          reason: webGpu.reason,
+        });
+        return this.#state;
+      }
+
+      // An adapter is not yet a runtime. The engine acquires a device with required limits
+      // and throws if any is refused, so a device short of one starts nothing whatever
+      // model it is asked for — refusing it here makes that a stated reason a product can
+      // render, rather than a load failure a person has to interpret.
+      const short = belowRuntimeFloor(webGpu.capability);
+      if (short !== undefined) {
+        this.#setState({
+          kind: "unavailable",
+          modelId: this.#modelId,
+          reason: "device_limits_insufficient",
+          limit: short,
+        });
+        return this.#state;
+      }
+
+      // Model-level requirements are the model's, not the runtime's. A device can clear
+      // every floor and still be unable to run this entry.
+      const missing = missingFeatures(webGpu.capability, this.#requiredFeatures);
+      if (missing.length > 0) {
+        this.#setState({
+          kind: "unavailable",
+          modelId: this.#modelId,
+          reason: "model_features_unavailable",
+          missing,
         });
         return this.#state;
       }
@@ -176,10 +248,11 @@ export class LocalInferenceRuntime {
       );
     }
 
-    const resolvedOptions = {
+    const resolvedOptions: ResolvedGenerationOptions = {
       ...DEFAULT_GENERATION_OPTIONS,
       ...options,
     };
+    assertUsableConstraint(resolvedOptions.responseFormat);
     if (
       !Number.isInteger(resolvedOptions.maxTokens) ||
       resolvedOptions.maxTokens < 1 ||

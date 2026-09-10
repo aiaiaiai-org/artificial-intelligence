@@ -148,14 +148,33 @@ const UNAVAILABLE = {
   webgpu_adapter_unavailable: "No WebGPU: navigator.gpu exists but granted no adapter.",
 };
 
-// Limits worth recording beyond the two that decide anything. Each is a ceiling a
+// Adapter limits @mlc-ai/web-llm@0.2.84 requires before it will acquire a device: it
+// asks for 1 GiB of buffer and storage-binding headroom and falls back once to the first
+// two values, while the last two have no fallback at all. A device short of any of them
+// starts no engine, whatever model it is asked for, so all four decide — and
+// maxStorageBuffersPerShaderStage sits above the WebGPU default of 8, which is how a
+// perfectly modern device fails here.
+const RUNTIME_DEVICE_FLOORS = {
+  maxBufferSize: 1 << 28,
+  maxStorageBufferBindingSize: 1 << 27,
+  maxComputeWorkgroupStorageSize: 32 << 10,
+  maxStorageBuffersPerShaderStage: 10,
+};
+const FLOOR_LIMITS = Object.keys(RUNTIME_DEVICE_FLOORS);
+
+// Limits worth recording beyond the ones that decide anything. Each is a ceiling a
 // quantized kernel can hit before model size does.
 const OTHER_LIMITS = [
-  "maxComputeWorkgroupStorageSize",
   "maxComputeInvocationsPerWorkgroup",
-  "maxStorageBuffersPerShaderStage",
   "maxBindGroups",
 ];
+
+// The first floor this adapter reports itself below, or null when nothing it reported is
+// short. A limit the adapter did not report is unknown rather than short: refusing on it
+// would turn a reporting gap into a verdict about a device.
+function belowRuntimeFloor(limits) {
+  return FLOOR_LIMITS.find((key) => typeof limits[key] === "number" && limits[key] < RUNTIME_DEVICE_FLOORS[key]) ?? null;
+}
 
 function bytes(value) {
   if (typeof value !== "number") return "—";
@@ -228,7 +247,7 @@ async function probe() {
   if (!adapter) return { reason: "webgpu_adapter_unavailable" };
 
   const limits = {};
-  for (const key of ["maxBufferSize", "maxStorageBufferBindingSize", ...OTHER_LIMITS]) {
+  for (const key of [...FLOOR_LIMITS, ...OTHER_LIMITS]) {
     limits[key] = adapter.limits?.[key];
   }
   return {
@@ -264,21 +283,35 @@ async function main() {
     record.reason = result.reason;
     if (result.error) record.error = result.error;
     flag("decisive", "shader-f16", undefined);
-    put("decisive", "maxBufferSize", "—", "decisive");
-    put("decisive", "maxStorageBufferBindingSize", "—", "decisive");
+    for (const key of FLOOR_LIMITS) put("decisive", key, "—", "decisive");
   } else {
-    document.getElementById("verdict").textContent = result.f16
-      ? "WebGPU with shader-f16. Record the buffer limits below."
-      : "WebGPU without shader-f16. Half-precision kernels cannot run here.";
+    const short = belowRuntimeFloor(result.limits);
+    document.getElementById("verdict").textContent = short !== null
+      ? `No local model here: ${short} is SHORT of what the runtime requires. Nothing loads on this surface, whatever the model.`
+      : result.f16
+        ? "WebGPU with shader-f16, and every runtime floor cleared."
+        : "Runtime floors cleared, but no shader-f16. Half-precision kernels cannot run here.";
     record.webgpu = true;
     record.f16 = result.f16;
     record.limits = result.limits;
+    // The verdict is a reading of the limits, so record which floor decided it rather than
+    // leaving a reader of RESULTS.md to re-derive it from four raw numbers.
+    record.belowRuntimeFloor = short;
     record.features = result.features;
     record.info = result.info;
 
     flag("decisive", "shader-f16", result.f16);
-    put("decisive", "maxBufferSize", bytes(result.limits.maxBufferSize), "decisive");
-    put("decisive", "maxStorageBufferBindingSize", bytes(result.limits.maxStorageBufferBindingSize), "decisive");
+    for (const key of FLOOR_LIMITS) {
+      const value = result.limits[key];
+      const required = RUNTIME_DEVICE_FLOORS[key];
+      // Every floor is shown against the value the runtime demands, and each row says
+      // outright whether it clears — so a limit that refuses the whole surface cannot be
+      // read as one of the numbers the page merely records.
+      const verdict = typeof value !== "number" ? "not reported" : value >= required ? "clears" : "SHORT";
+      const shown = key.endsWith("Size") ? bytes(value) : (typeof value === "number" ? String(value) : "—");
+      const asked = key.endsWith("Size") ? bytes(required) : String(required);
+      put("decisive", key, `${shown} — needs ${asked} — ${verdict}`, "decisive");
+    }
 
     for (const key of OTHER_LIMITS) {
       const value = result.limits[key];

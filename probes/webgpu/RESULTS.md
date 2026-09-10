@@ -9,12 +9,23 @@ one is a fact about a device, the other is a task that has not been done.
 
 ## Surfaces
 
-| Surface | WebGPU | `shader-f16` | `maxBufferSize` | `maxStorageBufferBindingSize` | Measured |
-|---|---|---|---|---|---|
-| Mobile Safari (iOS) | not measured | — | — | — | — |
-| Embedded WebView — messaging mini app (iOS) | not measured | — | — | — | — |
-| Embedded WebView — activity iframe (sandboxed) | not measured | — | — | — | — |
-| Desktop Chrome | not measured | — | — | — | — |
+| Surface | WebGPU | `shader-f16` | `maxBufferSize` | `maxStorageBufferBindingSize` | `maxComputeWorkgroupStorageSize` | `maxStorageBuffersPerShaderStage` | Measured |
+|---|---|---|---|---|---|---|---|
+| Mobile Safari (iOS) | not measured | — | — | — | — | — | — |
+| Embedded WebView — messaging mini app (iOS) | not measured | — | — | — | — | — | — |
+| Embedded WebView — activity iframe (sandboxed) | not measured | — | — | — | — | — | — |
+| Desktop Chrome | not measured | — | — | — | — | — | — |
+
+All four limit columns are the pinned runtime's own floors — 256 MiB, 128 MiB, 32 KiB and
+**10** respectively — and a surface short of any of them loads nothing at all. The last two
+used to sit under "other limits" on the page and were dropped from this table, which left
+the row most likely to refuse a modern device readable only in raw JSON. The page now marks
+each `clears`, `SHORT` or `not reported`, and records its verdict as `belowRuntimeFloor`:
+`null` when nothing reported is short, otherwise the name of the first limit that was.
+
+A limit an adapter did not report is `not reported`, which is not the same as short. Record
+it that way rather than as a failure: WebGPU requires an adapter to expose every limit, so
+an absent one is a gap in that browser and worth noting as such.
 
 The first three are the ones worth the trouble. Desktop Chrome is the control: it is
 expected to clear every bar, and a desktop-only result proves nothing about whether a
@@ -44,7 +55,15 @@ record was kept.
   "secureContext": true,
   "webgpu": true,
   "f16": true,
-  "limits": { "maxBufferSize": 0, "maxStorageBufferBindingSize": 0 },
+  "limits": {
+    "maxBufferSize": 0,
+    "maxStorageBufferBindingSize": 0,
+    "maxComputeWorkgroupStorageSize": 0,
+    "maxStorageBuffersPerShaderStage": 0,
+    "maxComputeInvocationsPerWorkgroup": 0,
+    "maxBindGroups": 0
+  },
+  "belowRuntimeFloor": null,
   "features": [],
   "info": {}
 }
@@ -53,10 +72,15 @@ record was kept.
 
 ## What the results decide
 
+- **Any limit below the runtime floor** — nothing loads there, whatever the model. This is
+  the runtime's own requirement, checked before any catalog is consulted: the engine asks
+  for these limits when it acquires a device and throws if one is refused. Note that
+  `maxStorageBuffersPerShaderStage` needs 10 against a WebGPU default of 8, so this is the
+  row a perfectly modern device is most likely to fail on.
 - **No `shader-f16` on a surface** — half-precision kernels do not run there. That surface
   needs a deterministic path as its product, not as a fallback it degrades into.
-- **A low `maxBufferSize`** — weights need chunking to that ceiling. This is a constraint on
-  how a model is loaded, not on whether it can be.
+- **A low `maxBufferSize` that still clears the floor** — weights need chunking to that
+  ceiling. This is a constraint on how a model is loaded, not on whether it can be.
 - **No adapter at all** — nothing local runs there, and the surface should never render a
   local model as available.
 

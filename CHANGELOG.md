@@ -35,14 +35,35 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
 - **`@aiaiaiai/webllm`** — a browser-local WebGPU/WebLLM inference lifecycle that probes
   without downloading, loads only on an explicit call, and reports `ready` separately from
   cached, loading, unavailable and failed.
+- `RUNTIME_DEVICE_FLOORS` and `belowRuntimeFloor`, the four adapter limits the pinned
+  runtime requests before it will acquire a device. `probe()` applies them and refuses with
+  `unavailable(reason: "device_limits_insufficient", limit)` rather than reporting a device
+  supported that the engine would throw on — `maxStorageBuffersPerShaderStage` needs 10
+  against a WebGPU default of 8, so this is reachable on a current device. A limit the
+  adapter did not report is unknown rather than short, and does not refuse.
+- `ServedCatalog`, so a product loads artifacts it hosts itself instead of a third party's
+  mirror on a revision it does not control. It is validated when handed over rather than
+  when a download fails: artifact URLs must carry an immutable `/resolve/<revision>/`
+  segment, which is what stops the pinned runtime appending `resolve/main/` and turning a
+  mirror into a moving target. `appConfig` passes the runtime's own configuration through
+  unchecked for a product that needs a shape the catalog does not describe. Both reach
+  engine creation and the cache lookup, which have to agree or a mirrored model reads as
+  uncached forever.
+- `GenerationOptions.responseFormat`, carrying `text`, an EBNF `grammar`, or a
+  `json_object` schema through to the decoder, so a product parsing structured output
+  parses something the model could not have failed to produce. A `grammar` or `json_object`
+  with an empty body is refused as `invalid_request` rather than silently decoding open. A
+  constrained parse is still a proposal an authority decision must admit.
 - **`@aiaiaiai/contracts`** — the host side of the same wire contract, with no runtime
   dependencies, so a client observes the rules the producer keeps rather than re-deriving
   them.
 - **`probes/webgpu`** — a dependency-free static page that reports a device's WebGPU
   adapter features and limits, naming its unavailable reasons exactly as
   `@aiaiaiai/webllm` does. It requests an adapter and stops: no device, no shader, no
-  model, no download. Results are recorded per surface in `probes/webgpu/RESULTS.md`,
-  where an unmeasured surface stays visibly unmeasured.
+  model, no download. All four runtime floors are marked decisive, each reported as
+  `clears`, `SHORT` or `not reported` against the value the runtime demands, and the page
+  records its own verdict as `belowRuntimeFloor`. Results are recorded per surface in
+  `probes/webgpu/RESULTS.md`, where an unmeasured surface stays visibly unmeasured.
 - **`fixtures/contract-wire-0.2.0.json`** — one corpus answered by both implementations, so
   a drifting mirror fails a build rather than a payload.
 - `RuntimeSession::snapshot` and `restore`, so a subject outlives the process serving it,

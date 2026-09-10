@@ -11,6 +11,10 @@ runs generation in a dedicated Web Worker, and reports `ready` separately from c
 loading, unavailable and failed — so a state a product renders as unavailable is never a
 state that quietly still generates.
 
+The probe reads the four adapter limits the pinned runtime requires and refuses a device
+that would start no engine, naming the limit that was short, rather than reporting it
+supported and finding out at the end of a download.
+
 ```ts
 import { LocalInferenceRuntime, WebLlmBrowserHost } from "@aiaiaiai/webllm";
 
@@ -19,6 +23,21 @@ await runtime.probe();   // never downloads
 await runtime.load();    // the only call allowed to fetch model artifacts
 
 for await (const chunk of runtime.stream(messages)) {
+  append(chunk);
+}
+```
+
+A product that ships serves its own artifacts and can constrain the decode:
+
+```ts
+const runtime = new LocalInferenceRuntime(
+  new WebLlmBrowserHost({ catalog }),   // revision-pinned URLs, SRI hashes, verified here
+  catalog.models[0],
+);
+
+for await (const chunk of runtime.stream(messages, {
+  responseFormat: { type: "grammar", grammar },
+})) {
   append(chunk);
 }
 ```
