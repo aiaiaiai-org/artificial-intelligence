@@ -143,8 +143,8 @@ function assertSri(value: string, field: string): void {
   }
 
   const algorithm = match[1] as keyof typeof SRI_DIGEST_BYTES;
-  const payload = match[2];
-  const padding = match[3].length;
+  const payload = match[2] ?? "";
+  const padding = (match[3] ?? "").length;
   const digestBytes = SRI_DIGEST_BYTES[algorithm];
   const expectedPayloadCharacters = Math.ceil((digestBytes * 8) / 6);
   const expectedPadding = (3 - (digestBytes % 3)) % 3;
