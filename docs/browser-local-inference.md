@@ -34,9 +34,11 @@ Only `ready` and `generating` prove that local inference is available on the cur
 generation from `ready` alone. A state a product renders as unavailable is therefore never a
 state that quietly still generates.
 
-`unavailable` carries the reason it was reached. Three of them are what a WebGPU probe can
-observe on its own — `insecure_context`, `webgpu_missing`, `webgpu_adapter_unavailable` —
-and the fourth is a verdict the runtime reaches from the capability the probe measured.
+`unavailable` carries the reason it was reached. Three are facts a WebGPU probe can observe
+on its own — `insecure_context`, `webgpu_missing`, `webgpu_adapter_unavailable`. Two more are
+runtime verdicts over measured capability and the selected served entry:
+`device_limits_insufficient` names a runtime floor the adapter reported short, while
+`model_features_unavailable` names model-required features the adapter did not offer.
 
 ### The runtime floor
 
@@ -188,10 +190,10 @@ What it refuses, and why:
 | Refusal | Why |
 |---|---|
 | `artifacts` without a trailing `/resolve/<revision>/` | The pinned runtime appends `resolve/main/` to any URL without one. A mirror would silently become a moving target. |
-| a revision named `main`, `master`, `HEAD`, `latest`, `dev`, … anywhere in either URL | The same failure by hand. This is a heuristic and cannot prove a segment immutable — a commit hash and a branch name are the same shape of string — but it catches what actually happens. |
-| `modelLib` that is not a `.wasm` URL, or is served from a branch | The prebuilt registry points its own model library at a branch, so this is the one that is wrong by default rather than by mistake. |
+| a revision named `main`, `master`, `HEAD`, `latest`, `dev`, … anywhere in either URL | The same failure by hand. This is a heuristic and cannot prove a segment immutable — a commit hash and a branch name are the same shape of string — but it catches known moving revisions. |
+| `modelLib` that is not a `.wasm` URL, resolves through a moving revision, or is neither revision-pinned nor protected by `integrity.modelLib` | The WASM executable must stay tied to stable bytes rather than silently move behind a stable-looking URL. |
 | a plaintext `http:` URL | A page that could not have obtained a WebGPU adapter without a secure context cannot fetch these either. Better said here than as a mixed-content failure at download time. |
-| a malformed SRI hash | A hash that does not parse verifies nothing while appearing to. |
+| a malformed or wrong-length SRI hash | A hash whose algorithm, base64 form, or digest length is wrong verifies nothing while appearing to. |
 
 Weight shards are deliberately outside `integrity`: SRI does not cover them, and an
 integrity block that appeared to would be the more dangerous of the two. They are pinned by
