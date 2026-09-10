@@ -34,6 +34,44 @@ Only `ready` and `generating` prove that local inference is available on the cur
 generation from `ready` alone. A state a product renders as unavailable is therefore never a
 state that quietly still generates.
 
+`unavailable` carries the reason it was reached. Three are facts a WebGPU probe can observe
+on its own — `insecure_context`, `webgpu_missing`, `webgpu_adapter_unavailable`. Two more are
+runtime verdicts over measured capability and the selected served entry:
+`device_limits_insufficient` names a runtime floor the adapter reported short, while
+`model_features_unavailable` names model-required features the adapter did not offer.
+
+### The runtime floor
+
+An adapter is not yet a runtime. `@mlc-ai/web-llm@0.2.84` asks for four limits when it
+acquires a WebGPU device, and throws if any is refused:
+
+| Limit | Required | Fallback |
+|---|---|---|
+| `maxBufferSize` | 1 GiB | 256 MiB, then refuse |
+| `maxStorageBufferBindingSize` | 1 GiB | 128 MiB, then refuse |
+| `maxComputeWorkgroupStorageSize` | 32 KiB | none |
+| `maxStorageBuffersPerShaderStage` | 10 | none — the WebGPU default is 8 |
+
+A device short of any of them starts no engine, whatever model it is asked for. `probe()`
+therefore reads those limits and refuses before the cache is consulted, reporting
+`unavailable(reason: "device_limits_insufficient", limit)` with the limit that was short.
+That refusal is a stated fact a product can render, rather than an engine exception a
+person has to interpret — and it costs nothing, because the probe already had the adapter
+in hand.
+
+The floors are exported as `RUNTIME_DEVICE_FLOORS` and applied by
+`belowRuntimeFloor(capability)`, so a product that wants to say *why* a surface is refused
+reads the same table the runtime does rather than keeping its own copy.
+`maxStorageBuffersPerShaderStage` is the row that catches modern devices, and the only one
+whose requirement sits above the WebGPU default.
+
+A limit an adapter does not report is **not** treated as short. An absent value is unknown,
+and refusing on it would turn a reporting gap into a verdict about a device — the opposite
+mistake to the one this check exists to prevent, and one a person could do nothing about.
+WebGPU requires an adapter to expose every limit, so this is a gap in a browser rather than
+a property of a device; such a device reaches `load()` and, if the engine does refuse it,
+fails observably there.
+
 `supported(cached: true)` means artifacts exist, not that a model engine has successfully
 initialized. This distinction is deliberately suitable for a UI that must not display an AI
 as locally authorized while its model is downloading, preparing, unavailable, or failed.
@@ -61,6 +99,11 @@ import {
 const local = new LocalInferenceRuntime(new WebLlmBrowserHost());
 const availability = await local.probe(); // never downloads
 
+if (availability.kind === "unavailable") {
+  // Includes `device_limits_insufficient`, where `availability.limit` names the limit that
+  // was short. There is no remote fallback: this surface runs no local model.
+  return renderUnavailable(availability);
+}
 if (availability.kind === "supported") {
   await local.load(); // explicit user-approved download/load boundary
 }
@@ -102,12 +145,102 @@ decision must admit before anything is attempted. What the product takes on is r
 own failures — a `failed` or `unavailable` adapter state is an explicit degraded outcome, never
 an empty batch handed to the session as a successful turn.
 
+## Serving your own artifacts
+
+Left alone, the adapter loads from the pinned runtime's prebuilt registry: a third party's
+mirror, on a revision this repository does not control, over a network path a product cannot
+account for. A product that intends to ship gives the host its own catalog instead.
+
+```ts
+const catalog = {
+  models: [
+    {
+      modelId: "Small-q4f16_1-MLC",
+      artifacts: `https://models.example.org/Small-q4f16_1-MLC/resolve/${revision}/`,
+      modelLib: `https://models.example.org/libs/${revision}/Small-q4f16_1-webgpu.wasm`,
+      requiredFeatures: ["shader-f16"],
+      vramRequiredMb: 1403,
+      contextWindowSize: 4096,
+      integrity: { config: "sha256-…", modelLib: "sha384-…" },
+    },
+  ],
+  cacheBackend: "cache",
+} as const;
+
+const local = new LocalInferenceRuntime(
+  new WebLlmBrowserHost({ catalog }),
+  catalog.models[0],
+);
+```
+
+A product that already builds the pinned runtime's own `AppConfig`, or needs a shape
+`ServedCatalog` does not describe, passes `{ appConfig }` instead and it is used unchecked.
+That is the whole difference between the two options: the catalog is this package's opinion
+about what a mirror must get right, and `appConfig` is the way out of that opinion rather
+than a reason to fork the host. They are mutually exclusive.
+
+The catalog is checked when it is handed over, not when a download fails — every way of
+getting one wrong is otherwise discovered by a person on a phone waiting for a model that
+will never arrive. `validateServedCatalog` throws
+`LocalInferenceError("invalid_catalog")` on the first thing wrong, and the host runs it for
+you.
+
+What it refuses, and why:
+
+| Refusal | Why |
+|---|---|
+| `artifacts` without a trailing `/resolve/<revision>/` | The pinned runtime appends `resolve/main/` to any URL without one. A mirror would silently become a moving target. |
+| a revision named `main`, `master`, `HEAD`, `latest`, `dev`, … anywhere in either URL | The same failure by hand. This is a heuristic and cannot prove a segment immutable — a commit hash and a branch name are the same shape of string — but it catches known moving revisions. |
+| `modelLib` that is not a `.wasm` URL, resolves through a moving revision, or is neither revision-pinned nor protected by `integrity.modelLib` | The WASM executable must stay tied to stable bytes rather than silently move behind a stable-looking URL. |
+| a plaintext `http:` URL | A page that could not have obtained a WebGPU adapter without a secure context cannot fetch these either. Better said here than as a mixed-content failure at download time. |
+| a malformed or wrong-length SRI hash | A hash whose algorithm, base64 form, or digest length is wrong verifies nothing while appearing to. |
+
+Weight shards are deliberately outside `integrity`: SRI does not cover them, and an
+integrity block that appeared to would be the more dangerous of the two. They are pinned by
+the immutable revision segment instead. Where a hash *is* given, a mismatch is an error
+rather than a warning — a failed verification is the one case where continuing is worse
+than stopping.
+
+A served entry states what it requires, which is what lets `probe()` refuse a surface
+before a download rather than after one: a device that clears every runtime floor but lacks
+a feature the entry declared reaches
+`unavailable(reason: "model_features_unavailable", missing)`. This stays the model's
+refusal, not the runtime's — a bare identifier declares nothing here, and the adapter takes
+no view on which model a product should serve.
+
+## Constrained decode
+
+A product that parses structured output should be parsing something the model could not
+have failed to produce:
+
+```ts
+for await (const text of local.stream(history, {
+  responseFormat: { type: "grammar", grammar: menu.grammar() },
+})) {
+  render(text);
+}
+```
+
+`{ type: "json_object", schema }` is the other constraining form, and `{ type: "text" }`
+imposes nothing — the same as leaving the field unset, said out loud. Both constraints are
+the product's: this adapter neither writes grammars nor interprets what a satisfying string
+means. A `grammar` or `json_object` format carrying an empty body is refused with
+`invalid_request` rather than passed along, because it would read as a constrained decode at
+every call site while placing no constraint on the decoder at all.
+
+Constraining the decode does not change what the output *is*. A parse that succeeds is
+still a proposal an `Authority` decision must admit, and the grammar makes it a better
+proposal, never a permitted action.
+
 ## Deliberate first-slice limits
 
 - Text input and streamed text output only.
 - One loaded model and one generation at a time.
 - No tools, effect adapters, ambient network access, durable memory, or background wakeups.
 - No automatic download, retry, model fallback, or remote inference.
+- The adapter serves the catalog it is handed and mirrors nothing itself. Hosting weights is
+  redistribution, and whether a licence permits it is the deployment's question to answer
+  before the URLs in a catalog exist.
 - `unload()` releases GPU resources but intentionally keeps downloaded browser-cache data.
 - Recovery from a failed generation is an explicit `load()`, not an automatic retry.
 
