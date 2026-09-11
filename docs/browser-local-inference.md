@@ -25,9 +25,13 @@ probing.
 ```text
 idle -> probing -> supported(cached: false|true) -> loading -> ready -> generating
              \-> unavailable                    \-> failed     \-> failed
-                                                                  |
-                                                        load() ---+  (no download)
+                                                     |            |
+                                         cancelLoad()-+  load() ---+  (no download)
 ```
+
+A cancelled load returns to where it started — `supported` with the cache re-read, or `idle`
+when it started from anywhere else — and never to `failed`. `failed` is what a product
+renders as something having gone wrong, and nothing did: a person asked for this.
 
 Only `ready` and `generating` prove that local inference is available on the current device;
 `isLocalModelOperational(state)` implements exactly that check, and `stream()` permits
@@ -71,6 +75,40 @@ mistake to the one this check exists to prevent, and one a person could do nothi
 WebGPU requires an adapter to expose every limit, so this is a gap in a browser rather than
 a property of a device; such a device reaches `load()` and, if the engine does refuse it,
 fails observably there.
+
+### What the identifier already says
+
+An MLC identifier carries its quantisation: `Qwen3-0.6B-q4f16_1-MLC` is four-bit weights
+computed in half precision, and half-precision kernels do not compile without the WebGPU
+`shader-f16` feature. The engine knows this — `ModelRecord.required_features` is exactly
+that list, and it is checked in `reload()`. It is checked **after** the weights are
+downloaded, the WASM library is instantiated, and a GPU device is acquired.
+
+That would be tolerable if the list were reliably written. It is not. In the prebuilt
+registry of `@mlc-ai/web-llm@0.2.84`:
+
+| Quantisation | Entries | Declaring `shader-f16` |
+|---|---|---|
+| `q4f16_1` | 76 | 27 |
+| `q0f16` | 8 | 2 |
+| `q3f16_1` | 2 | 0 |
+
+So the adapter derives the requirement from the identifier instead of trusting the entry to
+state it. `parseQuantization(modelId)` reads the token, `requiredFeaturesFor(modelId,
+declared)` returns what the entry declared plus what the token implies, and `probe()`
+refuses on the union — `unavailable(reason: "model_features_unavailable", missing:
+["shader-f16"])`, before a byte is fetched. The same union is written into the record the
+engine consumes, so the late check agrees with the early one.
+
+Three things it deliberately does not do:
+
+- **It never removes a declared requirement.** An entry asking for a feature its identifier
+  does not imply has stated something about a WASM library this package cannot see, and is
+  believed.
+- **It never guesses.** An identifier with no token — `Small-MLC` — declares no
+  quantisation, and nothing is derived from a model's name, size, or family.
+- **It derives nothing from weight width.** A four-bit weight is dequantised by the kernels
+  the activation type already decided. `q4f32_1` requires nothing `q0f32` does not.
 
 `supported(cached: true)` means artifacts exist, not that a model engine has successfully
 initialized. This distinction is deliberately suitable for a UI that must not display an AI
@@ -119,6 +157,56 @@ for await (const text of local.stream([
 The result is generated text, not authority, an effect, an acknowledgement, or evidence of
 completion. The product owns the system prompt and conversation history. The adapter retains
 neither after the call.
+
+## The download a person can change their mind about
+
+`load()` is the one operation here that runs for minutes over a connection somebody is
+paying for. Two things follow from that, and both are part of the adapter rather than
+something a product is left to build.
+
+**It can be stopped.** `cancelLoad()` aborts a download in progress; so does an
+`AbortSignal` passed as `load({ signal })`. Either terminates the worker, which is what
+actually ends the fetches — the engine's own creation call takes no signal, and once its
+worker is gone its promise never settles at all, so it is raced rather than awaited.
+
+```ts
+const loading = local.load({ signal: controller.signal });
+cancelButton.onclick = () => local.cancelLoad();
+try {
+  await loading;
+} catch (error) {
+  if (error instanceof LocalInferenceError && error.code === "load_cancelled") {
+    // Not a failure. The lifecycle is already back where the load found it.
+  }
+}
+```
+
+There is one download however many callers asked for it, so any joined caller's signal
+cancels it for all of them and every joined caller is rejected with `load_cancelled`; a
+shared operation cannot be abandoned by one holder and continued for another. A load
+cancelled after the engine had already finished building releases that engine rather than
+stranding a GPU allocation nothing holds a reference to. And because a partial download
+leaves whatever it completed in browser storage, the `cached` flag is re-read on the way
+back rather than restored from what the load started with.
+
+**It can be deleted.** `unload()` gives back the GPU and keeps the download; `evict()` gives
+back the storage. A product that offers a local model has to offer this too — a few hundred
+megabytes a person cannot delete from inside the product is a few hundred megabytes they did
+not really consent to.
+
+```ts
+await local.unload();  // release the GPU
+await local.evict();   // and the artifacts it was loaded from
+```
+
+`evict()` refuses with `busy` while a load is running or an engine is loaded from the
+artifacts it would delete, and is deliberately available from `unavailable`: a device that
+can no longer run a model it once downloaded is precisely the device whose storage is worth
+giving back. Eviction reads the same catalog the download did, so a self-served model is
+deleted through its own artifact URLs rather than the prebuilt registry's. A failure to
+delete raises `evict_failed` and leaves the lifecycle untouched — a cache entry that will
+not go away changes nothing about what the device can run, and reporting the model as
+`failed` over it would say otherwise.
 
 ## Reaching the kernel
 
@@ -205,8 +293,40 @@ A served entry states what it requires, which is what lets `probe()` refuse a su
 before a download rather than after one: a device that clears every runtime floor but lacks
 a feature the entry declared reaches
 `unavailable(reason: "model_features_unavailable", missing)`. This stays the model's
-refusal, not the runtime's — a bare identifier declares nothing here, and the adapter takes
-no view on which model a product should serve.
+refusal, not the runtime's — the adapter takes no view on which model a product should
+serve, only on whether this device can run the one it was given.
+
+### Bounding what the cache costs
+
+An entry may state the shape of its KV cache, which is the part of a local model's memory a
+product actually controls:
+
+```ts
+{
+  modelId: "Small-q4f16_1-MLC",
+  // …
+  slidingWindowSize: 1024,
+  attentionSinkSize: 4,
+}
+```
+
+`contextWindowSize` is a fixed window: the conversation may not exceed it, and a prompt that
+does is refused. `slidingWindowSize` is the other shape — the conversation may run past the
+window, and what falls out of it is forgotten rather than refused — which is what bounds the
+cache on a device with little of it. `attentionSinkSize` pins that many tokens at the head
+of a sliding window, which is what keeps it from degrading once the earliest tokens leave.
+
+The two windows are mutually exclusive and an entry setting both is refused when it is
+handed over. A sliding window carries `context_window_size: -1` into the record with it,
+because the pinned runtime refuses a configuration where both are positive and a model's own
+`mlc-chat-config.json` normally declares a positive context window — an entry that set only
+`slidingWindowSize` would otherwise fail to load, naming a field the product never wrote.
+`attentionSinkSize` without `slidingWindowSize` is refused rather than ignored; `0` is a real
+choice and is accepted.
+
+Nothing else about generation is tuned here. There is no place to state a prefill chunk size,
+because `ChatConfig` in the pinned runtime has no such field and an option this package
+accepted and then dropped would be worse than one it never offered.
 
 ## Constrained decode
 
@@ -241,8 +361,14 @@ proposal, never a permitted action.
 - The adapter serves the catalog it is handed and mirrors nothing itself. Hosting weights is
   redistribution, and whether a licence permits it is the deployment's question to answer
   before the URLs in a catalog exist.
-- `unload()` releases GPU resources but intentionally keeps downloaded browser-cache data.
+- `unload()` releases GPU resources but intentionally keeps downloaded browser-cache data;
+  `evict()` is the separate, explicit operation that deletes them.
 - Recovery from a failed generation is an explicit `load()`, not an automatic retry.
+- A cancelled load is not resumed automatically. Whatever it completed stays in browser
+  storage and a later `load()` reuses it, but nothing restarts on its own.
+- No storage budget is reported. `navigator.storage.estimate()` is deliberately quantised by
+  browsers to resist fingerprinting, so a number read from it is not the number of bytes a
+  download has available, and this package does not present one as though it were.
 
 These limits make the adapter usable without allowing a model response to bypass the
 foundation's authority boundary.

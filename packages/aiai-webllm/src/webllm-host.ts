@@ -3,14 +3,17 @@
 
 import {
   CreateWebWorkerMLCEngine,
+  deleteModelAllInfoInCache,
   hasModelInCache,
   type AppConfig,
+  type ChatOptions,
   type InitProgressReport,
   type MLCEngineInterface,
   type ModelRecord,
   type ResponseFormat,
 } from "@mlc-ai/web-llm";
 import {
+  effectiveRequiredFeatures,
   validateServedCatalog,
   type ServedCatalog,
   type ServedModel,
@@ -65,6 +68,31 @@ function readCapability(adapter: GpuAdapter): DeviceCapability {
 
 export type WorkerFactory = () => Worker;
 
+/**
+ * Builds the KV-cache overrides one served entry asks for, or `undefined` when it asks for
+ * none.
+ *
+ * A sliding window carries `context_window_size: -1` with it. That is not a default this
+ * package prefers: the pinned runtime refuses a configuration where both windows are
+ * positive, and a model's own `mlc-chat-config.json` normally declares a positive context
+ * window — so an entry that set only `slidingWindowSize` would fail to load, naming a field
+ * the product never wrote.
+ */
+function toChatOverrides(model: ServedModel): ChatOptions | undefined {
+  const overrides: ChatOptions = {};
+  if (model.contextWindowSize !== undefined) {
+    overrides.context_window_size = model.contextWindowSize;
+  }
+  if (model.slidingWindowSize !== undefined) {
+    overrides.sliding_window_size = model.slidingWindowSize;
+    overrides.context_window_size = -1;
+    if (model.attentionSinkSize !== undefined) {
+      overrides.attention_sink_size = model.attentionSinkSize;
+    }
+  }
+  return Object.keys(overrides).length === 0 ? undefined : overrides;
+}
+
 /** Maps one served entry onto the record the pinned runtime consumes. */
 function toModelRecord(model: ServedModel): ModelRecord {
   const record: ModelRecord = {
@@ -72,14 +100,19 @@ function toModelRecord(model: ServedModel): ModelRecord {
     model_id: model.modelId,
     model_lib: model.modelLib,
   };
-  if (model.requiredFeatures !== undefined) {
-    record.required_features = [...model.requiredFeatures];
+  // What the entry declared, plus what its quantisation token implies. The engine reads
+  // this list too — but only in `reload()`, after the download — so the derived requirement
+  // is carried here as well rather than being relied on solely at probe time.
+  const features = effectiveRequiredFeatures(model);
+  if (features.length > 0) {
+    record.required_features = [...features];
   }
   if (model.vramRequiredMb !== undefined) {
     record.vram_required_MB = model.vramRequiredMb;
   }
-  if (model.contextWindowSize !== undefined) {
-    record.overrides = { context_window_size: model.contextWindowSize };
+  const overrides = toChatOverrides(model);
+  if (overrides !== undefined) {
+    record.overrides = overrides;
   }
   if (model.integrity !== undefined) {
     record.integrity = {
@@ -243,20 +276,48 @@ export class WebLlmBrowserHost implements LocalInferenceHost {
   public async createEngine(
     modelId: string,
     onProgress: (progress: LoadProgress) => void,
+    signal?: AbortSignal,
   ): Promise<LocalTextEngine> {
+    signal?.throwIfAborted();
     const worker = this.#workerFactory();
+    let onAbort: (() => void) | undefined;
     try {
-      const engine = await CreateWebWorkerMLCEngine(worker, modelId, {
+      const creation = CreateWebWorkerMLCEngine(worker, modelId, {
         initProgressCallback: (report: InitProgressReport) =>
           onProgress({ progress: report.progress, text: report.text }),
         ...(this.#appConfig === undefined
           ? {}
           : { appConfig: this.#appConfig }),
       });
-      return new WebLlmTextEngine(engine, worker);
+      if (signal === undefined) {
+        return new WebLlmTextEngine(await creation, worker);
+      }
+
+      // Terminating the worker is what actually stops the download — the fetches belong to
+      // it. The engine's own creation call takes no signal and, once its worker is gone,
+      // its promise never settles at all, so it is raced rather than awaited and its
+      // outcome is absorbed here so a cancelled load cannot surface later as an unhandled
+      // rejection.
+      void creation.catch(() => undefined);
+      const cancelled = new Promise<never>((_, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+      return new WebLlmTextEngine(await Promise.race([creation, cancelled]), worker);
     } catch (error) {
       worker.terminate();
       throw error;
+    } finally {
+      if (onAbort !== undefined) {
+        signal?.removeEventListener("abort", onAbort);
+      }
     }
+  }
+
+  public evictModel(modelId: string): Promise<void> {
+    // Reads the same catalog the download did, for the same reason the cache check does:
+    // deleting through the prebuilt registry would look through the wrong artifact URLs and
+    // report a self-served model deleted while its weights stayed on the device.
+    return deleteModelAllInfoInCache(modelId, this.#appConfig);
   }
 }

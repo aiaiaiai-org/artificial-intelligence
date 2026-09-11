@@ -27,6 +27,7 @@ export {
   type WebGpuUnavailableReason,
 } from "./contracts.js";
 export {
+  effectiveRequiredFeatures,
   findServedModel,
   validateServedCatalog,
   validateServedModel,
@@ -35,7 +36,19 @@ export {
   type ServedCatalog,
   type ServedModel,
 } from "./catalog.js";
-export { LocalInferenceRuntime, type StateListener } from "./runtime.js";
+export {
+  parseQuantization,
+  requiredFeaturesFor,
+  requiredFeaturesForQuantization,
+  SHADER_F16,
+  type ActivationDtype,
+  type Quantization,
+} from "./quantization.js";
+export {
+  LocalInferenceRuntime,
+  type LoadOptions,
+  type StateListener,
+} from "./runtime.js";
 export {
   toAppConfig,
   WebLlmBrowserHost,

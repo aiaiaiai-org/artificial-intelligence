@@ -54,6 +54,27 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   parses something the model could not have failed to produce. A `grammar` or `json_object`
   with an empty body is refused as `invalid_request` rather than silently decoding open. A
   constrained parse is still a proposal an authority decision must admit.
+- `parseQuantization` and `requiredFeaturesFor`, deriving a model's adapter requirements
+  from the quantisation its MLC identifier declares. A `…f16…` model cannot compile its
+  kernels without `shader-f16`, and the engine checks `required_features` only in
+  `reload()` — after the weights are downloaded and a device is acquired — while the pinned
+  registry leaves the declaration off 49 of its 76 `q4f16_1` entries and both `q3f16_1`
+  entries. `probe()` now refuses on the declared and the derived requirement together, so
+  that download is not paid for first. Nothing is removed from what an entry declared, and
+  an identifier carrying no token has nothing derived from it.
+- `load({ signal })` and `cancelLoad()`, ending a download in progress. A cancelled load
+  returns to where it started with the cache re-read, rejects joined callers with
+  `load_cancelled`, and never reports `failed` — nothing went wrong, a person asked for it.
+  An engine that finished building after the abort is released rather than stranded.
+- `evict()`, deleting a model's downloaded artifacts through the same catalog the download
+  used. `unload()` gives back the GPU; this gives back the storage. Refused with `busy`
+  while a load or an engine holds those artifacts, available from `unavailable`, and a
+  failed deletion raises `evict_failed` without marking the model broken.
+- `ServedModel.slidingWindowSize` and `attentionSinkSize`, bounding what the KV cache costs
+  on a device with little of it. The two window shapes are mutually exclusive and an entry
+  setting both is refused when handed over; a sliding window carries the
+  `context_window_size: -1` the pinned runtime requires with it, rather than failing a load
+  over a field the product never wrote.
 - **`@aiaiaiai/contracts`** — the host side of the same wire contract, with no runtime
   dependencies, so a client observes the rules the producer keeps rather than re-deriving
   them.

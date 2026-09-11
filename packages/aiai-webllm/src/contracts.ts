@@ -209,8 +209,10 @@ export function isLocalModelOperational(state: LocalInferenceState): boolean {
 
 export type LocalInferenceErrorCode =
   | "busy"
+  | "evict_failed"
   | "generation_failed"
   | "invalid_request"
+  | "load_cancelled"
   | "load_failed"
   | "invalid_catalog"
   | "not_ready"
@@ -257,8 +259,25 @@ export interface LocalTextEngine {
 export interface LocalInferenceHost {
   probeWebGpu(): Promise<WebGpuProbe>;
   hasModelInCache(modelId: string): Promise<boolean>;
+  /**
+   * Creates the engine, downloading artifacts that are not cached.
+   *
+   * `signal` aborts that download. This is the only operation in the adapter worth
+   * abandoning midway: it is the one that can run for minutes over a connection somebody
+   * is paying for, and a person who changes their mind about a download has no other way
+   * to say so.
+   */
   createEngine(
     modelId: string,
     onProgress: (progress: LoadProgress) => void,
+    signal?: AbortSignal,
   ): Promise<LocalTextEngine>;
+  /**
+   * Deletes this model's downloaded artifacts from browser storage.
+   *
+   * `unload()` releases the GPU and keeps the download; this is the other half, and the
+   * only way a product can offer to give the storage back. A model that was never
+   * downloaded is not an error to evict.
+   */
+  evictModel(modelId: string): Promise<void>;
 }

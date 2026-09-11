@@ -81,7 +81,24 @@ class FakeHost implements LocalInferenceHost {
   public cached = false;
   public cacheChecks = 0;
   public engineCreations = 0;
+  public evictions: string[] = [];
+  public evictionFails = false;
   public engine = new FakeEngine();
+
+  /** When set, `createEngine` hangs the way a real download does until something ends it. */
+  public stall = false;
+  /** Finishes a stalled creation successfully, standing in for a download that completed. */
+  public finishLoad: (() => void) | undefined;
+  /** The signal the last `createEngine` was given, so a test can read what reached it. */
+  public lastSignal: AbortSignal | undefined;
+  /**
+   * When set, a stalled creation ignores the signal and only ever succeeds.
+   *
+   * Honouring the signal is optional for a host, and even one that honours it can have the
+   * engine finish in the instant before the worker is terminated. The runtime cannot rely
+   * on a host to turn an abort into a rejection.
+   */
+  public ignoresSignal = false;
 
   public async probeWebGpu(): Promise<WebGpuProbe> {
     return this.probeResult;
@@ -92,14 +109,45 @@ class FakeHost implements LocalInferenceHost {
     return this.cached;
   }
 
-  public async createEngine(
+  public createEngine(
     _modelId: string,
     onProgress: (progress: LoadProgress) => void,
+    signal?: AbortSignal,
   ): Promise<LocalTextEngine> {
     this.engineCreations += 1;
+    this.lastSignal = signal;
     onProgress({ progress: 0.5, text: "halfway" });
-    return this.engine;
+    if (!this.stall) {
+      return Promise.resolve(this.engine);
+    }
+    return new Promise<LocalTextEngine>((resolve, reject) => {
+      this.finishLoad = () => resolve(this.engine);
+      if (this.ignoresSignal) {
+        return;
+      }
+      signal?.addEventListener("abort", () => reject(signal.reason), {
+        once: true,
+      });
+    });
   }
+
+  public async evictModel(modelId: string): Promise<void> {
+    if (this.evictionFails) {
+      throw new Error("the cache would not release it");
+    }
+    this.evictions.push(modelId);
+    this.cached = false;
+  }
+}
+
+/** Resolves once every already-queued microtask has run. */
+function settled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function isCode(code: string) {
+  return (error: unknown): boolean =>
+    error instanceof LocalInferenceError && error.code === code;
 }
 
 test("probe reports unsupported WebGPU without touching model cache", async () => {
@@ -297,14 +345,268 @@ test("a device clearing every floor is still refused the features its entry need
   assert.equal(host.engineCreations, 0);
 });
 
-test("a bare model identifier states no feature requirement of its own", async () => {
+test("a bare identifier still requires what its quantisation token implies", async () => {
   const host = new FakeHost();
   host.probeResult = { supported: true, capability: capableAdapter({ features: [] }) };
   const runtime = new LocalInferenceRuntime(host, DEFAULT_LOCAL_MODEL_ID);
 
-  // This adapter takes no view on which model a product serves. An identifier from the
-  // prebuilt registry declares nothing here, so nothing is refused on its behalf.
+  // The default identifier is `…-q4f16_1-…`, so its kernels are half precision. The engine
+  // checks that only in `reload()` — after the weights are downloaded and a device is
+  // acquired — so an adapter without `shader-f16` would otherwise pay for the whole
+  // download before failing to compile a shader.
+  assert.deepEqual(await runtime.probe(), {
+    kind: "unavailable",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    reason: "model_features_unavailable",
+    missing: ["shader-f16"],
+  });
+  assert.equal(host.cacheChecks, 0);
+  assert.equal(host.engineCreations, 0);
+});
+
+test("an identifier declaring no quantisation has nothing derived from it", async () => {
+  const host = new FakeHost();
+  host.probeResult = { supported: true, capability: capableAdapter({ features: [] }) };
+  const runtime = new LocalInferenceRuntime(host, "some-product-model");
+
+  // Nothing is inferred from a name. An identifier that carries no token has not stated its
+  // quantisation, and guessing at which kernels a WASM library contains is not this
+  // package's to do on a product's behalf.
   assert.equal((await runtime.probe()).kind, "supported");
+});
+
+test("a full-precision identifier requires nothing extra", async () => {
+  const host = new FakeHost();
+  host.probeResult = { supported: true, capability: capableAdapter({ features: [] }) };
+  const runtime = new LocalInferenceRuntime(host, "Llama-3.2-1B-Instruct-q4f32_1-MLC");
+
+  assert.equal((await runtime.probe()).kind, "supported");
+});
+
+test("a download is cancelled without being reported as a failure", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const seen: LocalInferenceState[] = [];
+  runtime.subscribe((state) => seen.push(state));
+
+  const loading = runtime.load();
+  await settled();
+  assert.equal(runtime.state.kind, "loading");
+
+  runtime.cancelLoad();
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+
+  // A cancelled load is not a failed one. `failed` is what a product renders as something
+  // having gone wrong, and nothing did — a person asked for this.
+  assert.ok(!seen.some((state) => state.kind === "failed"));
+  assert.deepEqual(runtime.state, {
+    kind: "supported",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    cached: false,
+  });
+});
+
+test("a cancelled load re-reads the cache rather than restoring the old flag", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const loading = runtime.load();
+  await settled();
+  // A partial download leaves whatever it completed in browser storage, so what the cache
+  // holds after a cancellation is a fact to re-read, not the flag the load started from.
+  host.cached = true;
+  runtime.cancelLoad();
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+
+  assert.deepEqual(runtime.state, {
+    kind: "supported",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    cached: true,
+  });
+});
+
+test("a caller's abort signal cancels the download it joined", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const controller = new AbortController();
+  const loading = runtime.load({ signal: controller.signal });
+  await settled();
+  assert.ok(host.lastSignal !== undefined, "the host is given a signal to abort on");
+
+  controller.abort();
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+});
+
+test("a signal passed by a joining caller cancels the one shared download", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const first = runtime.load();
+  const controller = new AbortController();
+  const second = runtime.load({ signal: controller.signal });
+  await settled();
+  assert.equal(host.engineCreations, 1, "one download, however many callers asked for it");
+
+  controller.abort();
+  // There is one download. It cannot be abandoned by one holder and continued for another,
+  // so both callers are told the same thing.
+  await assert.rejects(() => first, isCode("load_cancelled"));
+  await assert.rejects(() => second, isCode("load_cancelled"));
+});
+
+test("a load asked for with an already-aborted signal starts nothing", async () => {
+  const host = new FakeHost();
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  await assert.rejects(
+    () => runtime.load({ signal: AbortSignal.abort() }),
+    isCode("load_cancelled"),
+  );
+  assert.equal(host.engineCreations, 0);
+  assert.equal(runtime.state.kind, "supported");
+});
+
+test("an engine that finished building after the abort is released, not stranded", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  host.ignoresSignal = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const checksBefore = host.cacheChecks;
+  const loading = runtime.load();
+  await settled();
+  runtime.cancelLoad();
+  // The abort landed first, but the engine was already on its way. Leaving it loaded while
+  // reporting a cancelled load would strand a GPU allocation nothing holds a reference to.
+  host.finishLoad?.();
+
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+  assert.equal(host.engine.unloaded, true);
+  assert.notEqual(runtime.state.kind, "ready");
+  // The lifecycle settles once, not once per path the cancellation travelled through.
+  assert.equal(host.cacheChecks - checksBefore, 1);
+});
+
+test("cancelling when no load is running does nothing", async () => {
+  const host = new FakeHost();
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.load();
+
+  // A load that has already finished is not undone by cancelling it.
+  runtime.cancelLoad();
+  assert.equal(runtime.state.kind, "ready");
+});
+
+test("a load that finishes normally is unaffected by the cancellation machinery", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const controller = new AbortController();
+  const loading = runtime.load({ signal: controller.signal });
+  await settled();
+  host.finishLoad?.();
+  await loading;
+
+  assert.equal(runtime.state.kind, "ready");
+  // The signal is spent: a load that already succeeded cannot be aborted out of `ready`.
+  controller.abort();
+  assert.equal(runtime.state.kind, "ready");
+});
+
+test("evict deletes the artifacts and re-reads what the cache holds", async () => {
+  const host = new FakeHost();
+  host.cached = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+  assert.deepEqual(runtime.state, {
+    kind: "supported",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    cached: true,
+  });
+
+  await runtime.evict();
+
+  assert.deepEqual(host.evictions, [DEFAULT_LOCAL_MODEL_ID]);
+  assert.deepEqual(runtime.state, {
+    kind: "supported",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    cached: false,
+  });
+});
+
+test("evict refuses while an engine is loaded from the artifacts it would delete", async () => {
+  const host = new FakeHost();
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.load();
+
+  await assert.rejects(() => runtime.evict(), isCode("busy"));
+  assert.deepEqual(host.evictions, []);
+
+  await runtime.unload();
+  await runtime.evict();
+  assert.deepEqual(host.evictions, [DEFAULT_LOCAL_MODEL_ID]);
+});
+
+test("evict refuses while a download is in progress", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const loading = runtime.load();
+  await settled();
+  await assert.rejects(() => runtime.evict(), isCode("busy"));
+
+  runtime.cancelLoad();
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+});
+
+test("a device that can no longer run a model can still give its storage back", async () => {
+  const host = new FakeHost();
+  host.probeResult = { supported: false, reason: "webgpu_adapter_unavailable" };
+  host.cached = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  await runtime.evict();
+
+  assert.deepEqual(host.evictions, [DEFAULT_LOCAL_MODEL_ID]);
+  // The verdict about the device is untouched: evicting a download says nothing about
+  // whether this surface could run the model.
+  assert.deepEqual(runtime.state, {
+    kind: "unavailable",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    reason: "webgpu_adapter_unavailable",
+  });
+});
+
+test("a failed eviction is raised without reporting the model as broken", async () => {
+  const host = new FakeHost();
+  host.evictionFails = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  await assert.rejects(() => runtime.evict(), isCode("evict_failed"));
+  // A cache entry that would not go away changes nothing about what this device can run.
+  assert.deepEqual(runtime.state, {
+    kind: "supported",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    cached: false,
+  });
 });
 
 test("a decode constraint reaches the engine unchanged", async () => {

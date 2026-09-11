@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  effectiveRequiredFeatures,
   findServedModel,
   LocalInferenceError,
   toAppConfig,
@@ -18,8 +19,17 @@ const SHA256_SRI = `sha256-${"A".repeat(43)}=`;
 const SHA384_SRI = `sha384-${"A".repeat(64)}`;
 const SHA512_SRI = `sha512-${"A".repeat(86)}==`;
 
-function servedModel(overrides: Partial<ServedModel> = {}): ServedModel {
-  return {
+/**
+ * Builds a served entry, where an override of `undefined` removes the field rather than
+ * setting it.
+ *
+ * `exactOptionalPropertyTypes` is on, so a test meaning "this entry states no context
+ * window" has to produce an entry with no such key — not one holding `undefined`.
+ */
+function servedModel(
+  overrides: { readonly [K in keyof ServedModel]?: ServedModel[K] | undefined } = {},
+): ServedModel {
+  const merged: Record<string, unknown> = {
     modelId: "Small-q4f16_1-MLC",
     artifacts: `https://models.example.org/Small-q4f16_1-MLC/resolve/${REVISION}/`,
     modelLib: `https://models.example.org/libs/${REVISION}/Small-q4f16_1-webgpu.wasm`,
@@ -28,6 +38,12 @@ function servedModel(overrides: Partial<ServedModel> = {}): ServedModel {
     contextWindowSize: 4096,
     ...overrides,
   };
+  for (const key of Object.keys(merged)) {
+    if (merged[key] === undefined) {
+      delete merged[key];
+    }
+  }
+  return merged as unknown as ServedModel;
 }
 
 /** `assert.throws` reports nothing back, so the error is captured to be read here. */
@@ -132,6 +148,98 @@ test("stated requirements must be positive whole numbers", () => {
   refusal(servedModel({ vramRequiredMb: 0 }));
   refusal(servedModel({ contextWindowSize: -4096 }));
   refusal(servedModel({ vramRequiredMb: 1403.5 }));
+});
+
+test("a window is either fixed or sliding, never both", () => {
+  // The pinned runtime throws `WindowSizeConfigurationError` when both are positive. Caught
+  // where the entry is written rather than inside a load that already downloaded a model.
+  const error = refusal(
+    servedModel({ contextWindowSize: 4096, slidingWindowSize: 1024 }),
+  );
+  assert.match(error.message, /either fixed or sliding/);
+
+  validateServedModel(
+    servedModel({ contextWindowSize: undefined, slidingWindowSize: 1024 }),
+  );
+});
+
+test("an attention sink without a sliding window is refused", () => {
+  const error = refusal(
+    servedModel({ contextWindowSize: undefined, attentionSinkSize: 4 }),
+  );
+  assert.match(error.message, /attentionSinkSize/);
+
+  // Zero is a real choice — a sliding window with no pinned head — so it is accepted where
+  // a positive-integer check would have refused it.
+  validateServedModel(
+    servedModel({
+      contextWindowSize: undefined,
+      slidingWindowSize: 1024,
+      attentionSinkSize: 0,
+    }),
+  );
+  refusal(
+    servedModel({
+      contextWindowSize: undefined,
+      slidingWindowSize: 1024,
+      attentionSinkSize: -1,
+    }),
+  );
+});
+
+test("a sliding window carries the context override the runtime requires with it", () => {
+  const config = toAppConfig({
+    models: [
+      servedModel({
+        contextWindowSize: undefined,
+        slidingWindowSize: 1024,
+        attentionSinkSize: 4,
+      }),
+    ],
+  });
+
+  // A model's own `mlc-chat-config.json` normally declares a positive context window, and
+  // the runtime refuses a configuration where both are positive — so an entry that set only
+  // `slidingWindowSize` would fail to load, naming a field the product never wrote.
+  assert.deepEqual(config.model_list[0]?.overrides, {
+    sliding_window_size: 1024,
+    context_window_size: -1,
+    attention_sink_size: 4,
+  });
+});
+
+test("an entry stating no window carries no overrides at all", () => {
+  const config = toAppConfig({
+    models: [servedModel({ contextWindowSize: undefined })],
+  });
+  assert.equal(config.model_list[0]?.overrides, undefined);
+});
+
+test("what an entry requires includes what its identifier implies", () => {
+  // The identifier is `Small-q4f16_1-MLC`, so half precision is required whether or not the
+  // entry remembered to say so — which, across the pinned registry, it mostly does not.
+  assert.deepEqual(
+    effectiveRequiredFeatures(servedModel({ requiredFeatures: undefined })),
+    ["shader-f16"],
+  );
+
+  const config = toAppConfig({
+    models: [servedModel({ requiredFeatures: undefined })],
+  });
+  assert.deepEqual(config.model_list[0]?.required_features, ["shader-f16"]);
+});
+
+test("an entry that implies and declares nothing carries no feature list", () => {
+  const config = toAppConfig({
+    models: [
+      servedModel({
+        modelId: "Small-MLC",
+        artifacts: `https://models.example.org/Small-MLC/resolve/${REVISION}/`,
+        requiredFeatures: undefined,
+      }),
+    ],
+  });
+  assert.equal(config.model_list[0]?.required_features, undefined);
 });
 
 test("a catalog refuses to be empty or to serve one identifier twice", () => {
