@@ -65,9 +65,9 @@ npm install @aiaiaiai/contracts   # the wire contract it renders
 npm install @aiaiaiai/webllm      # only if it runs a model locally
 ```
 
-No release is cut yet, so neither the tag nor the packages resolve today.
-[Releasing](docs/releasing.md) is what a release does, what it verifies first, and what to
-pin until one exists.
+These install examples resolve only after the corresponding immutable tag or package version
+has been published. [Releasing](docs/releasing.md) defines the release evidence chain and
+what consumers pin before and after publication.
 
 See [Consuming the foundation](docs/consuming.md) for the port, failure, and pinning
 contract, [Releasing](docs/releasing.md) for how a version is cut and what to pin,
