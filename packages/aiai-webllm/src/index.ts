@@ -45,6 +45,11 @@ export {
   type Quantization,
 } from "./quantization.js";
 export {
+  selectServedModel,
+  type ModelSelection,
+  type RejectedModel,
+} from "./selection.js";
+export {
   LocalInferenceRuntime,
   type LoadOptions,
   type StateListener,

@@ -74,6 +74,13 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   used. `unload()` gives back the GPU; this gives back the storage. Refused with `busy`
   while a load or an engine holds those artifacts, available from `unavailable`, and a
   failed deletion raises `evict_failed` without marking the model broken.
+- `selectServedModel(catalog, capability)`, serving a device the first entry it can
+  actually run instead of refusing it the only one on offer. The catalog's order is the
+  preference — this package has no quality metric and invents none — and the derived
+  quantisation requirement is what lets a catalog with no feature strings in it hand a
+  `q4f32_1` entry to an adapter that lacks `shader-f16`. A runtime floor refuses the whole
+  catalog at once; a feature refusal is reported per entry, because no aggregate over them
+  would be true of any single model.
 - `ServedModel.slidingWindowSize` and `attentionSinkSize`, bounding what the KV cache costs
   on a device with little of it. The two window shapes are mutually exclusive and an entry
   setting both is refused when handed over; a sliding window carries the

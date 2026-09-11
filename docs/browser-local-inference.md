@@ -320,6 +320,48 @@ a feature the entry declared reaches
 refusal, not the runtime's — the adapter takes no view on which model a product should
 serve, only on whether this device can run the one it was given.
 
+### Serving the device in front of you
+
+A catalog serving one model refuses every device that cannot run it. A catalog serving a
+half-precision entry and a full-precision one can serve both kinds of device — but only if
+something picks between them, and picking is the part a product should not have to write
+against WebGPU feature strings:
+
+```ts
+const host = new WebLlmBrowserHost({ catalog });
+const probe = await host.probeWebGpu();          // no download, no engine
+if (!probe.supported) {
+  return renderUnavailable(probe.reason);
+}
+
+const choice = selectServedModel(catalog, probe.capability);
+if (!choice.selected) {
+  // `device_limits_insufficient` names the limit; `model_features_unavailable` carries a
+  // `rejected` entry per model, each saying what that model needed and this device lacked.
+  return renderUnavailable(choice);
+}
+
+const local = new LocalInferenceRuntime(host, choice.model);
+```
+
+**The catalog's order is the preference.** The first entry the device can actually run is
+the one selected. This package has no view on which model is better, no quality metric, and
+no way to acquire one, so it reads the order a product already had to choose rather than
+inventing a ranking to override it.
+
+What makes this work without a single feature string in the catalog is the derivation
+above: an entry whose identifier says `q4f16_1` is skipped on an adapter without
+`shader-f16`, and the `q4f32_1` entry behind it is served instead. Quantisation stops being
+only a reason to refuse a device and becomes the reason to hand it a different model.
+
+Two refusals remain, and they are shaped differently on purpose. A runtime floor refuses the
+whole catalog at once — it is the engine's requirement, not any model's, so a device short
+of one starts no engine whatever entry it is handed. A feature refusal is reported per
+entry, because no aggregate over them would be true: "this device is missing A and B" is
+false of a catalog where one entry needs A and another needs B, and a product telling a
+person what their device lacks should not be handed a sentence that is true of no model in
+it.
+
 ### Bounding what the cache costs
 
 An entry may state the shape of its KV cache, which is the part of a local model's memory a
