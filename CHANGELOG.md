@@ -14,10 +14,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Unt
 a minor bump is a breaking change: `accepts_provider` treats a pre-`1.0` line as compatible
 only across patches of the same minor.
 
-## [0.2.0] — unreleased
+## [Unreleased]
 
-The first line. It is a compatibility line, not a stability promise. This heading takes a
-date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
+## [0.2.0] — 2026-09-11
+
+The first line. It is a compatibility line, not a stability promise.
 
 ### Added
 
@@ -116,7 +117,8 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
 
 ### Notes for consumers
 
-- Pin the tag. Until this release is tagged, pin a revision reachable from `master`.
+- Pin the tag once `v0.2.0` exists. Before that, pin a revision reachable from `master`.
 - `0.1.0` and `0.2.0` are mutually incompatible by construction, and a test asserts it.
 
+[Unreleased]: https://github.com/aiaiaiai-org/artificial-intelligence/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/aiaiaiai-org/artificial-intelligence/releases/tag/v0.2.0
