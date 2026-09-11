@@ -5,6 +5,7 @@ import {
   CreateWebWorkerMLCEngine,
   deleteModelAllInfoInCache,
   hasModelInCache,
+  prebuiltAppConfig,
   type AppConfig,
   type ChatOptions,
   type InitProgressReport,
@@ -19,6 +20,7 @@ import {
   type ServedModel,
 } from "./catalog.js";
 import { LocalInferenceError } from "./contracts.js";
+import { requiredFeaturesFor } from "./quantization.js";
 import {
   DEVICE_LIMITS,
   type ResponseConstraint,
@@ -101,8 +103,9 @@ function toModelRecord(model: ServedModel): ModelRecord {
     model_lib: model.modelLib,
   };
   // What the entry declared, plus what its quantisation token implies. The engine reads
-  // this list too — but only in `reload()`, after the download — so the derived requirement
-  // is carried here as well rather than being relied on solely at probe time.
+  // this list too, between acquiring a device and fetching the weights, so carrying the
+  // derived requirement here makes that guard fire for an entry that declared nothing —
+  // behind `probe()`, which has already refused before any of it.
   const features = effectiveRequiredFeatures(model);
   if (features.length > 0) {
     record.required_features = [...features];
@@ -131,6 +134,39 @@ function toModelRecord(model: ServedModel): ModelRecord {
     };
   }
   return record;
+}
+
+/**
+ * The pinned runtime's prebuilt registry, with each record's `required_features` completed
+ * from its own identifier.
+ *
+ * The engine's guard over that list sits between acquiring a GPU device and fetching the
+ * weights, so a record that declares what it needs fails there — before the download. A
+ * record that declares nothing skips the guard entirely and carries on into device
+ * initialisation and the weight fetch, to fail somewhere past them. Most of the registry's
+ * half-precision records declare nothing.
+ *
+ * Completing the list here is what makes that guard fire for them. It is a second line
+ * behind `probe()`, which refuses before any fetch at all; this one covers a product using
+ * the host without the runtime, and costs a copy of a list this package already loads.
+ *
+ * A product's own `appConfig` is left exactly as given — it is the documented way out of
+ * this package's opinions, and this is one of them.
+ */
+export function completedPrebuiltAppConfig(): AppConfig {
+  return {
+    ...prebuiltAppConfig,
+    model_list: prebuiltAppConfig.model_list.map((record) => {
+      const declared = record.required_features ?? [];
+      const features = requiredFeaturesFor(record.model_id, declared);
+      // The derivation only ever adds, so an unchanged length means an unchanged record —
+      // and a record that declared nothing and implies nothing keeps no list at all rather
+      // than gaining an empty one.
+      return features.length === declared.length
+        ? record
+        : { ...record, required_features: [...features] };
+    }),
+  };
 }
 
 /** Builds the app config a served catalog describes. */
@@ -165,7 +201,8 @@ export interface WebLlmBrowserHostOptions {
   /**
    * The models this product serves from its own origin. Left unset, the host falls back to
    * the pinned runtime's prebuilt registry, which is a third party's mirror on a revision
-   * this product does not control.
+   * this product does not control — and whose feature requirements are completed from its
+   * own identifiers on the way through.
    */
   readonly catalog?: ServedCatalog;
   /**
@@ -226,7 +263,7 @@ class WebLlmTextEngine implements LocalTextEngine {
 /** Production browser host for WebLLM. */
 export class WebLlmBrowserHost implements LocalInferenceHost {
   readonly #workerFactory: WorkerFactory;
-  readonly #appConfig: AppConfig | undefined;
+  readonly #appConfig: AppConfig;
 
   public constructor(options: WebLlmBrowserHostOptions = {}) {
     this.#workerFactory =
@@ -243,11 +280,12 @@ export class WebLlmBrowserHost implements LocalInferenceHost {
     }
     // A catalog is checked when it is handed over, not when a download fails: every way of
     // getting one wrong is otherwise found by a person waiting for a model that never
-    // arrives.
+    // arrives. With neither given, the prebuilt registry stands in — with the feature list
+    // its own identifiers imply, which it does not reliably carry.
     this.#appConfig =
-      options.catalog === undefined
-        ? options.appConfig
-        : toAppConfig(options.catalog);
+      options.catalog !== undefined
+        ? toAppConfig(options.catalog)
+        : (options.appConfig ?? completedPrebuiltAppConfig());
   }
 
   public async probeWebGpu(): Promise<WebGpuProbe> {
@@ -285,9 +323,7 @@ export class WebLlmBrowserHost implements LocalInferenceHost {
       const creation = CreateWebWorkerMLCEngine(worker, modelId, {
         initProgressCallback: (report: InitProgressReport) =>
           onProgress({ progress: report.progress, text: report.text }),
-        ...(this.#appConfig === undefined
-          ? {}
-          : { appConfig: this.#appConfig }),
+        appConfig: this.#appConfig,
       });
       if (signal === undefined) {
         return new WebLlmTextEngine(await creation, worker);

@@ -81,11 +81,18 @@ fails observably there.
 An MLC identifier carries its quantisation: `Qwen3-0.6B-q4f16_1-MLC` is four-bit weights
 computed in half precision, and half-precision kernels do not compile without the WebGPU
 `shader-f16` feature. The engine knows this — `ModelRecord.required_features` is exactly
-that list, and it is checked in `reload()`. It is checked **after** the weights are
-downloaded, the WASM library is instantiated, and a GPU device is acquired.
+that list, and `reloadInternal()` checks it. Where it checks it matters:
 
-That would be tolerable if the list were reliably written. It is not. In the prebuilt
-registry of `@mlc-ai/web-llm@0.2.84`:
+```text
+fetch mlc-chat-config.json -> fetch WASM lib -> instantiate -> acquire GPU device
+   -> check required_features -> initWebGPU -> fetch tokenizer -> fetch weights
+```
+
+So a record that declares what it needs is refused before the weights — though only after
+two fetches, a WASM instantiation and a device acquisition. That much would be tolerable.
+The problem is the records that declare nothing: they skip the check altogether and carry
+on into device initialisation and the weight fetch, failing somewhere past them. And the
+list is not reliably written. In the prebuilt registry of `@mlc-ai/web-llm@0.2.84`:
 
 | Quantisation | Entries | Declaring `shader-f16` |
 |---|---|---|
@@ -94,11 +101,28 @@ registry of `@mlc-ai/web-llm@0.2.84`:
 | `q3f16_1` | 2 | 0 |
 
 So the adapter derives the requirement from the identifier instead of trusting the entry to
-state it. `parseQuantization(modelId)` reads the token, `requiredFeaturesFor(modelId,
-declared)` returns what the entry declared plus what the token implies, and `probe()`
-refuses on the union — `unavailable(reason: "model_features_unavailable", missing:
-["shader-f16"])`, before a byte is fetched. The same union is written into the record the
-engine consumes, so the late check agrees with the early one.
+state it. `parseQuantization(modelId)` reads the token and `requiredFeaturesFor(modelId,
+declared)` returns what the entry declared plus what the token implies. That union is
+applied in two places, in this order:
+
+1. **Before any fetch.** The runtime refuses on it —
+   `unavailable(reason: "model_features_unavailable", missing: ["shader-f16"])`. This is
+   the refusal that costs nothing, because the probe already had the adapter in hand.
+2. **In the record the engine consumes.** A served catalog carries the union into
+   `required_features`, and where no catalog is given, `completedPrebuiltAppConfig()`
+   completes the prebuilt registry's own records the same way. That makes the engine's
+   guard fire for a record that would have skipped it — later than the first check, but
+   still ahead of the weights.
+
+The first is the invariant; the second is what still holds when a product uses
+`WebLlmBrowserHost` without `LocalInferenceRuntime`. A product's own `appConfig` is left
+exactly as given: it is the documented way out of this package's opinions, and this is one
+of them.
+
+The refusal is not conditional on having probed. `load()` is a supported entry point on its
+own, so a load that was not preceded by a successful `probe()` reads the device first and
+refuses on the same verdict — a requirement enforced only on the probed path would not be a
+requirement at all.
 
 Three things it deliberately does not do:
 

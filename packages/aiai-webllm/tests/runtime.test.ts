@@ -350,10 +350,10 @@ test("a bare identifier still requires what its quantisation token implies", asy
   host.probeResult = { supported: true, capability: capableAdapter({ features: [] }) };
   const runtime = new LocalInferenceRuntime(host, DEFAULT_LOCAL_MODEL_ID);
 
-  // The default identifier is `…-q4f16_1-…`, so its kernels are half precision. The engine
-  // checks that only in `reload()` — after the weights are downloaded and a device is
-  // acquired — so an adapter without `shader-f16` would otherwise pay for the whole
-  // download before failing to compile a shader.
+  // The default identifier is `…-q4f16_1-…`, so its kernels are half precision. The
+  // engine's own guard over `required_features` comes after two fetches and a device
+  // acquisition, and this entry is one of the many the registry leaves it off — so an
+  // adapter without `shader-f16` would otherwise reach the weight fetch before failing.
   assert.deepEqual(await runtime.probe(), {
     kind: "unavailable",
     modelId: DEFAULT_LOCAL_MODEL_ID,
@@ -864,4 +864,21 @@ test("loading again recovers a failed generation without downloading", async () 
   }
   assert.deepEqual(received, ["ві", "таю"]);
   assert.equal(isLocalModelOperational(runtime.state), true);
+});
+
+test("a load with no preceding probe still refuses a device the model needs more than", async () => {
+  const host = new FakeHost();
+  host.probeResult = { supported: true, capability: capableAdapter({ features: [] }) };
+  // `load()` is a supported entry point on its own — nothing requires a `probe()` first —
+  // so a requirement checked only inside `probe()` is not a requirement at all.
+  const runtime = new LocalInferenceRuntime(host, DEFAULT_LOCAL_MODEL_ID);
+
+  await assert.rejects(() => runtime.load(), isCode("unavailable"));
+  assert.equal(host.engineCreations, 0);
+  assert.deepEqual(runtime.state, {
+    kind: "unavailable",
+    modelId: DEFAULT_LOCAL_MODEL_ID,
+    reason: "model_features_unavailable",
+    missing: ["shader-f16"],
+  });
 });

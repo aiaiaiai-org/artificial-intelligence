@@ -90,9 +90,9 @@ test("a declared requirement is not duplicated by the derived one", () => {
 
 test("the registry leaves the requirement off most of its half-precision entries", () => {
   // This is the measurement the derivation exists for, kept as a test so that a version
-  // bump which fixes the registry is noticed rather than assumed. The engine checks
-  // `required_features` in `reload()`, after the download and after acquiring a device, so
-  // an entry that declares nothing costs a person the whole download before failing.
+  // bump which fixes the registry is noticed rather than assumed. The engine's check over
+  // `required_features` sits between acquiring a device and fetching the weights, and an
+  // entry that declares nothing skips it and carries on into that fetch.
   const silent = prebuiltAppConfig.model_list.filter(
     (record) =>
       parseQuantization(record.model_id)?.activation === "f16" &&

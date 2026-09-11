@@ -246,8 +246,9 @@ function assertWindowConfiguration(model: ServedModel, where: string): void {
  * quantisation token implies.
  *
  * The addition is not a convenience. The pinned runtime's own registry leaves `shader-f16`
- * off most of its half-precision entries, and checks the list only after the download —
- * so an entry that states nothing is the common case, not the careless one.
+ * off most of its half-precision entries, and its check over that list is skipped entirely
+ * by an entry that carries none — so an entry stating nothing is the common case, not the
+ * careless one.
  */
 export function effectiveRequiredFeatures(
   model: ServedModel,

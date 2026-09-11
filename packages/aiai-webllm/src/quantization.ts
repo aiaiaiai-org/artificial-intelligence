@@ -7,14 +7,18 @@
  *
  * This exists because of a measured gap rather than a theoretical one. In the prebuilt
  * registry of `@mlc-ai/web-llm@0.2.84`, 76 entries are `q4f16_1` and only 27 of them list
- * `shader-f16` in `required_features`; both `q3f16_1` entries list nothing. The engine
- * checks that list — but it checks it in `reload()`, after the weights are downloaded, the
- * WASM library is instantiated, and a GPU device is acquired. An entry that declares
- * nothing therefore costs a person on a phone the entire download before failing to
- * compile a half-precision kernel.
+ * `shader-f16` in `required_features`; both `q3f16_1` entries list nothing.
+ *
+ * The engine does check that list. `reloadInternal()` fetches `mlc-chat-config.json` and
+ * the WASM library, instantiates the library, acquires a GPU device, checks
+ * `required_features`, and only then initialises WebGPU and fetches the weights. So an
+ * entry that declares what it needs is refused before the weights — though after two
+ * fetches and a device acquisition. An entry that declares nothing skips the check
+ * altogether and carries on into device initialisation and the weight fetch, to fail
+ * somewhere past them.
  *
  * The identifier already says which kernels the library contains. Deriving the requirement
- * from it turns that failure into a refusal at probe time, before a byte is fetched.
+ * from it moves the refusal ahead of every fetch rather than into the middle of them.
  */
 
 /** Data type a model's kernels compute in, as its identifier declares it. */

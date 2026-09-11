@@ -56,12 +56,16 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   constrained parse is still a proposal an authority decision must admit.
 - `parseQuantization` and `requiredFeaturesFor`, deriving a model's adapter requirements
   from the quantisation its MLC identifier declares. A `…f16…` model cannot compile its
-  kernels without `shader-f16`, and the engine checks `required_features` only in
-  `reload()` — after the weights are downloaded and a device is acquired — while the pinned
-  registry leaves the declaration off 49 of its 76 `q4f16_1` entries and both `q3f16_1`
-  entries. `probe()` now refuses on the declared and the derived requirement together, so
-  that download is not paid for first. Nothing is removed from what an entry declared, and
-  an identifier carrying no token has nothing derived from it.
+  kernels without `shader-f16`. The engine checks `required_features` between acquiring a
+  GPU device and fetching the weights — so a record that declares it is refused after two
+  fetches and a device acquisition, and a record that declares nothing skips the check and
+  carries on into the weight fetch. The pinned registry leaves the declaration off 49 of
+  its 76 `q4f16_1` entries and both `q3f16_1` entries. The declared and derived
+  requirements are now applied together, ahead of every fetch, on both `probe()` and a
+  `load()` that was not preceded by one; `completedPrebuiltAppConfig` carries the same
+  union into the records the engine consumes, so the guard fires for entries that would
+  have skipped it. Nothing is removed from what an entry declared, an identifier carrying
+  no token has nothing derived from it, and a product's own `appConfig` is untouched.
 - `load({ signal })` and `cancelLoad()`, ending a download in progress. A cancelled load
   returns to where it started with the cache re-read, rejects joined callers with
   `load_cancelled`, and never reports `failed` — nothing went wrong, a person asked for it.

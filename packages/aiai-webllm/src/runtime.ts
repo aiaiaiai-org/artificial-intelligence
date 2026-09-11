@@ -110,8 +110,9 @@ export class LocalInferenceRuntime {
     if (typeof model === "string") {
       this.#modelId = model;
       // A bare identifier still declares its quantisation, and a half-precision model
-      // cannot compile its kernels without `shader-f16`. The engine checks that only after
-      // the download, so deriving it here is what makes the refusal free.
+      // cannot compile its kernels without `shader-f16`. The engine's own check comes after
+      // two fetches and a device acquisition, and is skipped entirely by a record that
+      // declares nothing — so deriving it here is what puts the refusal before any of it.
       this.#requiredFeatures = requiredFeaturesFor(model);
     } else {
       validateServedModel(model);
@@ -140,7 +141,18 @@ export class LocalInferenceRuntime {
     if (this.#loadOperation !== undefined || this.#state.kind === "probing") {
       throw new LocalInferenceError("busy", "a model lifecycle operation is in progress");
     }
+    await this.#readCapability();
+    return this.#state;
+  }
 
+  /**
+   * Reads the device and settles on `supported`, `unavailable` or `failed`.
+   *
+   * Separate from `probe()` because `load()` needs the same verdict and cannot go through
+   * the public method: a load in progress is exactly what `probe()`'s busy guard refuses.
+   * The guard belongs to the entry points; the reading does not.
+   */
+  async #readCapability(): Promise<void> {
     this.#setState({ kind: "probing", modelId: this.#modelId });
     try {
       const webGpu = await this.#host.probeWebGpu();
@@ -150,7 +162,7 @@ export class LocalInferenceRuntime {
           modelId: this.#modelId,
           reason: webGpu.reason,
         });
-        return this.#state;
+        return;
       }
 
       // An adapter is not yet a runtime. The engine acquires a device with required limits
@@ -165,7 +177,7 @@ export class LocalInferenceRuntime {
           reason: "device_limits_insufficient",
           limit: short,
         });
-        return this.#state;
+        return;
       }
 
       // Model-level requirements are the model's, not the runtime's. A device can clear
@@ -178,7 +190,7 @@ export class LocalInferenceRuntime {
           reason: "model_features_unavailable",
           missing,
         });
-        return this.#state;
+        return;
       }
 
       const cached = await this.#host.hasModelInCache(this.#modelId);
@@ -186,12 +198,15 @@ export class LocalInferenceRuntime {
     } catch (cause) {
       this.#setFailure("probe", false, cause);
     }
-    return this.#state;
   }
 
   /**
    * Initializes the local engine, downloading the selected model when it is not cached.
    * Concurrent callers share the same load operation.
+   *
+   * A load that has not been preceded by a successful `probe()` reads the device first and
+   * refuses on the same verdict `probe()` would have reached, rather than handing an
+   * unsupported device to the engine.
    *
    * `options.signal` cancels that download. There is one download, so any joined caller's
    * signal cancels it for all of them and every joined caller is rejected with
@@ -281,6 +296,37 @@ export class LocalInferenceRuntime {
     previous: LocalInferenceState,
     signal: AbortSignal,
   ): Promise<void> {
+    // A requirement checked only inside `probe()` is not a requirement: `load()` is a
+    // supported entry point on its own, and nothing obliges a caller to probe first. So the
+    // capability is read here too whenever support has not already been established, before
+    // anything is handed to the host — which is what makes the derived feature requirement
+    // hold on every path to a download rather than on the probed one alone.
+    if (previous.kind !== "supported") {
+      await this.#readCapability();
+      if (signal.aborted) {
+        await this.#settleAfterCancel(previous);
+        throw cancellation(signal.reason);
+      }
+      const preflight = this.#state;
+      if (preflight.kind === "unavailable") {
+        throw new LocalInferenceError(
+          "unavailable",
+          `local inference is unavailable: ${preflight.reason}`,
+        );
+      }
+      if (preflight.kind !== "supported") {
+        // `#readCapability` already recorded the failure and its message; repeating it here
+        // as a `load_failed` would report two failures for one device that never answered.
+        throw new LocalInferenceError(
+          "load_failed",
+          preflight.kind === "failed"
+            ? `the capability preflight failed: ${preflight.message}`
+            : "the capability preflight did not settle",
+        );
+      }
+      previous = preflight;
+    }
+
     const cachedBeforeLoad =
       previous.kind === "supported" ? previous.cached : false;
     this.#setState({

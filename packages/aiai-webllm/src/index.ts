@@ -50,6 +50,7 @@ export {
   type StateListener,
 } from "./runtime.js";
 export {
+  completedPrebuiltAppConfig,
   toAppConfig,
   WebLlmBrowserHost,
   type WebLlmBrowserHostOptions,

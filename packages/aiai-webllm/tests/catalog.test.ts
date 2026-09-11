@@ -4,15 +4,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  completedPrebuiltAppConfig,
   effectiveRequiredFeatures,
   findServedModel,
   LocalInferenceError,
+  parseQuantization,
   toAppConfig,
   WebLlmBrowserHost,
   validateServedCatalog,
   validateServedModel,
   type ServedModel,
 } from "../src/index.js";
+import { prebuiltAppConfig, type AppConfig } from "@mlc-ai/web-llm";
 
 const REVISION = "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567";
 const SHA256_SRI = `sha256-${"A".repeat(43)}=`;
@@ -317,4 +320,55 @@ test("a raw app config is accepted as the way out of this package's opinions", (
     (error: unknown) =>
       error instanceof LocalInferenceError && error.code === "invalid_catalog",
   );
+});
+
+test("the prebuilt registry is completed from its own identifiers, not taken as written", () => {
+  const completed = completedPrebuiltAppConfig();
+  const upstream = new Map(
+    prebuiltAppConfig.model_list.map((record) => [record.model_id, record]),
+  );
+
+  assert.equal(completed.model_list.length, prebuiltAppConfig.model_list.length);
+
+  let repaired = 0;
+  for (const record of completed.model_list) {
+    const original = upstream.get(record.model_id);
+    assert.ok(original !== undefined);
+
+    if (parseQuantization(record.model_id)?.activation === "f16") {
+      // The engine's guard over this list sits between acquiring a device and fetching the
+      // weights. A record that declares nothing skips it and carries on into the fetch; a
+      // completed one stops there instead.
+      assert.ok(record.required_features?.includes("shader-f16"));
+      if (!(original.required_features ?? []).includes("shader-f16")) {
+        repaired += 1;
+      }
+    } else {
+      // Nothing is added to a record that implies nothing — not even an empty list.
+      assert.deepEqual(record.required_features, original.required_features);
+    }
+  }
+
+  assert.ok(repaired > 0, "the completion must be doing something on this registry");
+});
+
+test("a product's own app config is passed through exactly as given", () => {
+  // `appConfig` is the documented way out of this package's opinions, and completing a
+  // feature list is one of them.
+  const given: AppConfig = {
+    model_list: [
+      {
+        model: "https://models.example.org/x/resolve/abc/",
+        model_id: "Mine-q4f16_1-MLC",
+        model_lib: "https://models.example.org/x/abc/lib.wasm",
+      },
+    ],
+  };
+  const host = new WebLlmBrowserHost({
+    workerFactory: () => assert.fail("constructing a host must not create a worker"),
+    appConfig: given,
+  });
+
+  assert.ok(host instanceof WebLlmBrowserHost);
+  assert.equal(given.model_list[0]?.required_features, undefined);
 });
