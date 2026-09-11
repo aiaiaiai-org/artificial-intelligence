@@ -109,6 +109,11 @@ class FakeHost implements LocalInferenceHost {
     return this.cached;
   }
 
+  /** What the engine reports on its way up. One halfway report unless a test says otherwise. */
+  public progressReports: readonly LoadProgress[] = [
+    { progress: 0.5, timeElapsed: 7, text: "halfway" },
+  ];
+
   public createEngine(
     _modelId: string,
     onProgress: (progress: LoadProgress) => void,
@@ -116,7 +121,9 @@ class FakeHost implements LocalInferenceHost {
   ): Promise<LocalTextEngine> {
     this.engineCreations += 1;
     this.lastSignal = signal;
-    onProgress({ progress: 0.5, text: "halfway" });
+    for (const report of this.progressReports) {
+      onProgress(report);
+    }
     if (!this.stall) {
       return Promise.resolve(this.engine);
     }
@@ -706,8 +713,49 @@ test("only explicit load creates an engine and reaches ready", async () => {
       (state) =>
         state.kind === "loading" &&
         state.progress === 0.5 &&
+        state.timeElapsed === 7 &&
         state.text === "halfway",
     ),
+  );
+});
+
+test("a load that has started but not been described carries no text of ours", async () => {
+  const host = new FakeHost();
+  host.stall = true;
+  const runtime = new LocalInferenceRuntime(host);
+  await runtime.probe();
+
+  const states: LocalInferenceState[] = [];
+  runtime.subscribe((state) => states.push(state));
+  const loading = runtime.load();
+  await settled();
+
+  const first = states.find((state) => state.kind === "loading");
+  assert.ok(first !== undefined && first.kind === "loading");
+  // This package used to write "downloading model" here: an English UI label encoding what
+  // `cachedBeforeLoad` already says, indistinguishable from the engine's own reports.
+  assert.equal(first.text, undefined);
+  assert.equal(first.cachedBeforeLoad, false);
+  assert.equal(first.timeElapsed, 0);
+
+  runtime.cancelLoad();
+  await assert.rejects(() => loading, isCode("load_cancelled"));
+});
+
+test("an engine reporting a negative elapsed time is not believed", async () => {
+  const host = new FakeHost();
+  host.progressReports = [{ progress: 0.25, timeElapsed: -3, text: "odd" }];
+  const runtime = new LocalInferenceRuntime(host);
+
+  const states: LocalInferenceState[] = [];
+  runtime.subscribe((state) => states.push(state));
+  await runtime.load();
+
+  // A negative elapsed time is not a duration. It is clamped for the same reason `progress`
+  // is: the value is the engine's reading, and this package does not pass on a reading that
+  // cannot be true.
+  assert.ok(
+    states.some((state) => state.kind === "loading" && state.timeElapsed === 0),
   );
 });
 

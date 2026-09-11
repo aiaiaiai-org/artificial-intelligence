@@ -70,6 +70,13 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   returns to where it started with the cache re-read, rejects joined callers with
   `load_cancelled`, and never reports `failed` — nothing went wrong, a person asked for it.
   An engine that finished building after the abort is released rather than stranded.
+- `LoadProgress.timeElapsed`, carried into the `loading` state, and `text` made optional
+  and documented as the engine's own untranslated diagnostic line rather than a label to
+  show a person. The runtime no longer invents `"downloading model"` /
+  `"preparing cached model"`: that was an English UI string encoding exactly what
+  `cachedBeforeLoad` already says. No byte count is reported — the pinned runtime collapses
+  `fetchedBytes / totalBytes` into a ratio and a rounded English sentence, and this package
+  will not parse prose to recover a number it can then call measured.
 - `evict()`, deleting a model's downloaded artifacts through the same catalog the download
   used. `unload()` gives back the GPU; this gives back the storage. Refused with `busy`
   while a load or an engine holds those artifacts, available from `unavailable`, and a

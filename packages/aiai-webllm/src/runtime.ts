@@ -329,12 +329,16 @@ export class LocalInferenceRuntime {
 
     const cachedBeforeLoad =
       previous.kind === "supported" ? previous.cached : false;
+    // No `text` here on purpose. This package used to write one — "downloading model" /
+    // "preparing cached model" — which was an English UI label encoding exactly what
+    // `cachedBeforeLoad` already says, in one language, indistinguishable from the engine's
+    // own reports. The boolean is the fact; the sentence is the product's to write.
     this.#setState({
       kind: "loading",
       modelId: this.#modelId,
       cachedBeforeLoad,
       progress: 0,
-      text: cachedBeforeLoad ? "preparing cached model" : "downloading model",
+      timeElapsed: 0,
     });
     let engine: LocalTextEngine;
     try {
@@ -346,6 +350,9 @@ export class LocalInferenceRuntime {
             modelId: this.#modelId,
             cachedBeforeLoad,
             progress: Math.min(1, Math.max(0, report.progress)),
+            // Clamped like `progress`: a negative elapsed time is not a duration, and the
+            // value is the engine's reading rather than this package's own clock.
+            timeElapsed: Math.max(0, report.timeElapsed),
             text: report.text,
           });
         },

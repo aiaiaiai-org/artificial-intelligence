@@ -50,8 +50,29 @@ export interface ResolvedGenerationOptions {
   readonly responseFormat: ResponseConstraint | undefined;
 }
 
+/**
+ * One progress report from the engine while a model loads.
+ *
+ * There is no byte count here, and its absence is the pinned runtime's rather than a
+ * choice. It computes `fetchedBytes / totalBytes` and then reports only that ratio and an
+ * English sentence it renders from the same numbers, rounded to whole megabytes. Recovering
+ * the bytes would mean parsing that sentence — a vendor's prose, in one language, changed
+ * at its convenience — and a number obtained that way must not travel in a field whose name
+ * says it was measured.
+ */
 export interface LoadProgress {
+  /** Fraction of this phase completed, `0` to `1`. */
   readonly progress: number;
+  /** Seconds the engine reports having spent so far. Measured by it, not by this package. */
+  readonly timeElapsed: number;
+  /**
+   * The engine's own diagnostic line, such as `Fetching param cache[1/38]: 12MB fetched…`.
+   *
+   * It is untranslated English written for a developer watching a console, and it changes
+   * with the pinned version. Render it as diagnostics if at all — the thing to show a
+   * person is built from `progress`, `timeElapsed` and `cachedBeforeLoad`, in the product's
+   * own words.
+   */
   readonly text: string;
 }
 
@@ -179,9 +200,25 @@ export type LocalInferenceState =
   | {
       readonly kind: "loading";
       readonly modelId: string;
+      /**
+       * Whether the artifacts were already in browser storage when the load began.
+       *
+       * This is what a product renders the difference from: preparing something already
+       * downloaded is not the same event as downloading it, and only one of them is worth
+       * warning somebody about on a metered connection.
+       */
       readonly cachedBeforeLoad: boolean;
       readonly progress: number;
-      readonly text: string;
+      readonly timeElapsed: number;
+      /**
+       * The engine's own diagnostic line — see {@link LoadProgress.text}.
+       *
+       * Absent until the engine has reported one, which is why this field is optional: a
+       * load that has started but not yet been described is a real state, and filling it
+       * with a sentence this package wrote would make an invented label indistinguishable
+       * from a measured one.
+       */
+      readonly text?: string;
     }
   | { readonly kind: "ready"; readonly modelId: string }
   | { readonly kind: "generating"; readonly modelId: string }

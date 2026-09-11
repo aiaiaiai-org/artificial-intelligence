@@ -322,7 +322,11 @@ export class WebLlmBrowserHost implements LocalInferenceHost {
     try {
       const creation = CreateWebWorkerMLCEngine(worker, modelId, {
         initProgressCallback: (report: InitProgressReport) =>
-          onProgress({ progress: report.progress, text: report.text }),
+          onProgress({
+            progress: report.progress,
+            timeElapsed: report.timeElapsed,
+            text: report.text,
+          }),
         appConfig: this.#appConfig,
       });
       if (signal === undefined) {

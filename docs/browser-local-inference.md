@@ -213,6 +213,23 @@ stranding a GPU allocation nothing holds a reference to. And because a partial d
 leaves whatever it completed in browser storage, the `cached` flag is re-read on the way
 back rather than restored from what the load started with.
 
+**It can be described honestly.** The `loading` state carries `progress`, the engine's
+`timeElapsed`, and `cachedBeforeLoad`. What it does not carry is a byte count, and that
+absence is the pinned runtime's rather than a choice: it computes `fetchedBytes /
+totalBytes` internally and then reports only that ratio and an English sentence rendered
+from the same numbers, rounded to whole megabytes. Recovering the bytes would mean parsing
+that sentence — a vendor's prose, in one language, changed at its convenience — and a number
+obtained that way must not travel in a field whose name says it was measured.
+
+`text` is that sentence, passed through as what it is: the engine's own diagnostic line,
+untranslated, written for a developer watching a console. It is optional, and absent until
+the engine has reported one — a load that has started but has not yet been described is a
+real state, and filling it with a sentence this package wrote would make an invented label
+indistinguishable from a measured one. Earlier revisions did exactly that, reporting
+`"downloading model"` or `"preparing cached model"`, which was an English UI label encoding
+precisely what `cachedBeforeLoad` already says. The boolean is the fact; the sentence is the
+product's to write, in the product's own language.
+
 **It can be deleted.** `unload()` gives back the GPU and keeps the download; `evict()` gives
 back the storage. A product that offers a local model has to offer this too — a few hundred
 megabytes a person cannot delete from inside the product is a few hundred megabytes they did
