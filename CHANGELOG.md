@@ -54,6 +54,45 @@ date when `v0.2.0` is tagged, and an `Unreleased` section opens above it.
   parses something the model could not have failed to produce. A `grammar` or `json_object`
   with an empty body is refused as `invalid_request` rather than silently decoding open. A
   constrained parse is still a proposal an authority decision must admit.
+- `parseQuantization` and `requiredFeaturesFor`, deriving a model's adapter requirements
+  from the quantisation its MLC identifier declares. A `…f16…` model cannot compile its
+  kernels without `shader-f16`. The engine checks `required_features` between acquiring a
+  GPU device and fetching the weights — so a record that declares it is refused after two
+  fetches and a device acquisition, and a record that declares nothing skips the check and
+  carries on into the weight fetch. The pinned registry leaves the declaration off 49 of
+  its 76 `q4f16_1` entries and both `q3f16_1` entries. The declared and derived
+  requirements are now applied together, ahead of every fetch, on both `probe()` and a
+  `load()` that was not preceded by one; `completedPrebuiltAppConfig` carries the same
+  union into the records the engine consumes, so the guard fires for entries that would
+  have skipped it. Nothing is removed from what an entry declared, an identifier carrying
+  no token has nothing derived from it, and a product's own `appConfig` is untouched.
+- `load({ signal })` and `cancelLoad()`, ending a download in progress. A cancelled load
+  returns to where it started with the cache re-read, rejects joined callers with
+  `load_cancelled`, and never reports `failed` — nothing went wrong, a person asked for it.
+  An engine that finished building after the abort is released rather than stranded.
+- `LoadProgress.timeElapsed`, carried into the `loading` state, and `text` made optional
+  and documented as the engine's own untranslated diagnostic line rather than a label to
+  show a person. The runtime no longer invents `"downloading model"` /
+  `"preparing cached model"`: that was an English UI string encoding exactly what
+  `cachedBeforeLoad` already says. No byte count is reported — the pinned runtime collapses
+  `fetchedBytes / totalBytes` into a ratio and a rounded English sentence, and this package
+  will not parse prose to recover a number it can then call measured.
+- `evict()`, deleting a model's downloaded artifacts through the same catalog the download
+  used. `unload()` gives back the GPU; this gives back the storage. Refused with `busy`
+  while a load or an engine holds those artifacts, available from `unavailable`, and a
+  failed deletion raises `evict_failed` without marking the model broken.
+- `selectServedModel(catalog, capability)`, serving a device the first entry it can
+  actually run instead of refusing it the only one on offer. The catalog's order is the
+  preference — this package has no quality metric and invents none — and the derived
+  quantisation requirement is what lets a catalog with no feature strings in it hand a
+  `q4f32_1` entry to an adapter that lacks `shader-f16`. A runtime floor refuses the whole
+  catalog at once; a feature refusal is reported per entry, because no aggregate over them
+  would be true of any single model.
+- `ServedModel.slidingWindowSize` and `attentionSinkSize`, bounding what the KV cache costs
+  on a device with little of it. The two window shapes are mutually exclusive and an entry
+  setting both is refused when handed over; a sliding window carries the
+  `context_window_size: -1` the pinned runtime requires with it, rather than failing a load
+  over a field the product never wrote.
 - **`@aiaiaiai/contracts`** — the host side of the same wire contract, with no runtime
   dependencies, so a client observes the rules the producer keeps rather than re-deriving
   them.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LocalInferenceError } from "./contracts.js";
+import { requiredFeaturesFor } from "./quantization.js";
 
 /**
  * Where a browser cache keeps downloaded artifacts.
@@ -51,8 +52,31 @@ export interface ServedModel {
   readonly requiredFeatures?: readonly string[];
   /** What the entry states it needs, in MB. A claim by whoever measured it, not a reading. */
   readonly vramRequiredMb?: number;
-  /** Context window to run this entry with. */
+  /**
+   * Context window to run this entry with.
+   *
+   * Mutually exclusive with {@link ServedModel.slidingWindowSize}: the pinned runtime
+   * refuses a configuration where both are positive.
+   */
   readonly contextWindowSize?: number;
+  /**
+   * Run this entry with a sliding-window KV cache of this many tokens instead of a fixed
+   * context window.
+   *
+   * This is the knob that bounds what the cache costs on a device with little of it: a
+   * conversation may run past the window, and what falls out of it is forgotten rather than
+   * refused. Setting it makes the adapter override the entry's own context window to `-1`,
+   * which is how the pinned runtime is told a window is sliding rather than fixed.
+   */
+  readonly slidingWindowSize?: number;
+  /**
+   * Tokens kept pinned at the start of a sliding window.
+   *
+   * Attention sinks are what keep a sliding window from degrading when the earliest tokens
+   * leave it. Meaningless without {@link ServedModel.slidingWindowSize}, and refused
+   * without it.
+   */
+  readonly attentionSinkSize?: number;
   readonly integrity?: ArtifactIntegrity;
 }
 
@@ -172,6 +196,66 @@ function assertPositiveInteger(
   }
 }
 
+function assertNonNegativeInteger(
+  value: number | undefined,
+  field: string,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!Number.isInteger(value) || value < 0) {
+    throw invalid(`${field} must be a non-negative integer, got ${value}`);
+  }
+}
+
+/**
+ * Checks the two KV-cache shapes against each other.
+ *
+ * The pinned runtime throws `WindowSizeConfigurationError` when both windows are positive
+ * and reads an attention sink only against a sliding window. Both are caught here instead,
+ * where the entry is written, rather than inside a load that has already downloaded a model.
+ */
+function assertWindowConfiguration(model: ServedModel, where: string): void {
+  assertPositiveInteger(model.contextWindowSize, `${where}: contextWindowSize`);
+  assertPositiveInteger(model.slidingWindowSize, `${where}: slidingWindowSize`);
+  assertNonNegativeInteger(model.attentionSinkSize, `${where}: attentionSinkSize`);
+
+  if (
+    model.contextWindowSize !== undefined &&
+    model.slidingWindowSize !== undefined
+  ) {
+    throw invalid(
+      `${where}: contextWindowSize and slidingWindowSize cannot both be set; a window is ` +
+        "either fixed or sliding, and the pinned runtime refuses a configuration where " +
+        "both are positive",
+    );
+  }
+  if (
+    model.attentionSinkSize !== undefined &&
+    model.slidingWindowSize === undefined
+  ) {
+    throw invalid(
+      `${where}: attentionSinkSize has no meaning without slidingWindowSize; an ` +
+        "attention sink is the head of a sliding window",
+    );
+  }
+}
+
+/**
+ * Everything this entry needs from an adapter: what it declared, plus what its identifier's
+ * quantisation token implies.
+ *
+ * The addition is not a convenience. The pinned runtime's own registry leaves `shader-f16`
+ * off most of its half-precision entries, and its check over that list is skipped entirely
+ * by an entry that carries none — so an entry stating nothing is the common case, not the
+ * careless one.
+ */
+export function effectiveRequiredFeatures(
+  model: ServedModel,
+): readonly string[] {
+  return requiredFeaturesFor(model.modelId, model.requiredFeatures ?? []);
+}
+
 /**
  * Checks one served entry, throwing `LocalInferenceError("invalid_catalog")` on the first
  * thing wrong with it.
@@ -225,7 +309,7 @@ export function validateServedModel(model: ServedModel): void {
     }
   }
   assertPositiveInteger(model.vramRequiredMb, `${where}: vramRequiredMb`);
-  assertPositiveInteger(model.contextWindowSize, `${where}: contextWindowSize`);
+  assertWindowConfiguration(model, where);
 
   const integrity = model.integrity;
   if (integrity !== undefined) {

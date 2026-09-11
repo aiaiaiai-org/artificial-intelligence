@@ -42,8 +42,12 @@ one shared corpus, so a mirror that drifts fails a build rather than a payload.
 
 The WebLLM adapter is the first concrete inference implementation. It probes WebGPU without
 downloading, loads only after an explicit call, runs generation in a dedicated worker, and
-reports `ready` separately from cached, loading, and failed states. It returns text only;
-the consuming product still owns proposal meaning, authority, and effects.
+reports `ready` separately from cached, loading, and failed states. The download it does
+make is one a person can change their mind about: refused before it starts when the device
+lacks what the model's quantisation requires, stopped while it runs, and deleted afterwards.
+Where a product serves more than one model, that same reading of the quantisation picks the
+entry the device can run rather than refusing it the only one on offer. It returns text
+only; the consuming product still owns proposal meaning, authority, and effects.
 
 A product runtime consumes this repository as a library. `aiai-runtime` re-exports the
 contract crate and ships a prelude, so a product adds one dependency rather than two pinned
