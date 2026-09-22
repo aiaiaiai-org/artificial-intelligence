@@ -71,6 +71,10 @@ for archive in "$@"; do
     exit "${status}"
   fi
 
+  # npm reads a bare `dir/file.tgz` as GitHub shorthand for `user/repo` and tries to clone
+  # it. An absolute path is only ever a file.
+  archive_path="$(cd "$(dirname "${archive}")" && pwd)/$(basename "${archive}")"
+
   echo "publishing ${name}@${version} to ${registry}"
-  npm publish "${archive}" --registry "${registry}"
+  npm publish "${archive_path}" --registry "${registry}"
 done
