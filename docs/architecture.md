@@ -56,6 +56,14 @@ generation. It does not import the Rust runtime and does not reinterpret generat
 an admitted action. A product may turn that text into its own proposal payload, but the
 existing proposal → authority → dispatch boundary still governs any effect.
 
+## Local speech host adapter
+
+`adapters/python/aiai-speech` is an independent Python host library. It owns the local
+Piper invocation and typed WAV result/refusal; consumers supply models, executable and
+limits. It does not depend on the Rust kernel, introduce service endpoints, select a voice,
+or own product authorization or output delivery. See the adapter README for its resource
+and model provenance boundaries.
+
 ## The three separations
 
 Everything in `aiai-runtime` exists to keep three separations true no matter how convincing
