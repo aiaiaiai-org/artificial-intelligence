@@ -1,0 +1,24 @@
+# © 2026 aiaiaiai · aiaiaiai.org
+# SPDX-License-Identifier: Apache-2.0
+name: Speech adapter CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  speech-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install adapter
+        run: python -m pip install ./adapters/python/aiai-speech
+      - name: Test installed adapter
+        run: python -m unittest discover -s adapters/python/aiai-speech/tests
