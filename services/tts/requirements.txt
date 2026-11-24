@@ -1,0 +1,4 @@
+# © 2026 aiaiaiai · aiaiaiai.org
+# SPDX-License-Identifier: Apache-2.0
+PyJWT[crypto]==2.15.1
+gunicorn==27.0.1
